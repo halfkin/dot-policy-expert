@@ -1,0 +1,973 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dot | Loomo Policy Expert</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #fafafa;
+      --bg-chat: #ffffff;
+      --bg-user-msg: #e8f0fe;
+      --bg-bot-msg: #f0f0f0;
+      --bg-blocked: #fee8e8;
+      --bg-conflict: #fef3e0;
+      --accent: #6c5ce7;
+      --accent-light: #a29bfe;
+      --text-primary: #2d3436;
+      --text-secondary: #636e72;
+      --text-citation: #6c5ce7;
+      --border: #e0e0e0;
+      --border-radius: 12px;
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --font-size-sm: 0.85rem;
+      --font-size-base: 1rem;
+      --font-size-lg: 1.25rem;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-body);
+      color: var(--text-primary);
+      background:
+        radial-gradient(1000px 420px at -8% -12%, #fce9dd 0%, transparent 55%),
+        radial-gradient(1100px 460px at 108% -8%, #e8f4ff 0%, transparent 58%),
+        linear-gradient(180deg, #fffefd 0%, var(--bg-primary) 40%, #f5f7fb 100%);
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .app {
+      width: min(960px, 100%);
+      height: min(92vh, 900px);
+      background: var(--bg-chat);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: 0 22px 50px rgba(41, 53, 108, 0.12);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .app::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(120deg, rgba(108, 92, 231, 0.04), rgba(162, 155, 254, 0.05));
+      pointer-events: none;
+    }
+
+    .header {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(6px);
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .brand-title {
+      font-size: var(--font-size-lg);
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      margin: 0;
+    }
+
+    .brand-subtitle {
+      margin: 0;
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .mode {
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: #f5f5f7;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .mode.mode-llm {
+      color: #1c4a72;
+      background: #e6f3ff;
+      border-color: #c7dff3;
+    }
+
+    .mode.mode-offline {
+      color: #565f66;
+      background: #f2f2f2;
+      border-color: #dedede;
+    }
+
+    .clear-btn {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text-secondary);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: var(--font-size-sm);
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+
+    .clear-btn:hover {
+      border-color: var(--accent-light);
+      color: var(--accent);
+    }
+
+    .chat-log {
+      position: relative;
+      z-index: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .message {
+      display: flex;
+      width: 100%;
+      animation: reveal 220ms ease;
+    }
+
+    .message.user {
+      justify-content: flex-end;
+    }
+
+    .message.bot {
+      justify-content: flex-start;
+    }
+
+    .bubble {
+      width: min(82%, 720px);
+      border-radius: var(--border-radius);
+      border: 1px solid var(--border);
+      padding: 12px 14px;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .message.user .bubble {
+      background: var(--bg-user-msg);
+      border-color: #d4e4ff;
+    }
+
+    .message.bot .bubble {
+      background: var(--bg-bot-msg);
+    }
+
+    .bubble.blocked {
+      background: var(--bg-blocked);
+      border-color: #f1c8c8;
+    }
+
+    .bubble.conflict {
+      background: var(--bg-conflict);
+      border-color: #f4dfb7;
+    }
+
+    .meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+
+    .sender {
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      border-radius: 999px;
+      padding: 4px 8px;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .badge-neutral {
+      color: #666;
+      background: #ededed;
+      border-color: #d8d8d8;
+    }
+
+    .badge-blocked {
+      color: #8a2121;
+      background: #f8d9d9;
+      border-color: #efb7b7;
+    }
+
+    .badge-conflict {
+      color: #855103;
+      background: #f9ebcf;
+      border-color: #ebd5a7;
+    }
+
+    .bubble-body {
+      white-space: pre-wrap;
+      line-height: 1.45;
+      font-size: var(--font-size-base);
+    }
+
+    details.citations {
+      border: 1px dashed #d7d2f8;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.6);
+      padding: 8px 10px;
+    }
+
+    details.citations summary {
+      cursor: pointer;
+      color: var(--text-citation);
+      font-size: var(--font-size-sm);
+      font-weight: 600;
+      list-style: none;
+    }
+
+    details.citations summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .citation-item {
+      margin-top: 10px;
+      border-top: 1px solid #e7e1fb;
+      padding-top: 10px;
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+    }
+
+    .citation-id {
+      font-family: var(--font-mono);
+      color: var(--text-citation);
+      font-size: 0.77rem;
+      margin-bottom: 6px;
+    }
+
+    .citation-quote {
+      font-style: italic;
+      color: #505056;
+      margin: 0;
+    }
+
+    .response-footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+    }
+
+    .confidence {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+    }
+
+    .confidence-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .confidence-high .confidence-dot { background: #31a24c; }
+    .confidence-medium .confidence-dot { background: #d0a108; }
+    .confidence-low .confidence-dot { background: #df7f10; }
+
+    .feedback-row {
+      display: inline-flex;
+      gap: 6px;
+      margin-left: auto;
+    }
+
+    .feedback-btn {
+      border: 1px solid #d9d9d9;
+      background: #fff;
+      color: #555;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 0.8rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .feedback-btn:hover:not(:disabled) {
+      border-color: var(--accent-light);
+      color: var(--accent);
+    }
+
+    .feedback-btn.selected {
+      border-color: var(--accent);
+      background: rgba(108, 92, 231, 0.08);
+      color: var(--accent);
+    }
+
+    .feedback-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .suggestions {
+      margin-top: 4px;
+      border-top: 1px dashed #dcdcdc;
+      padding-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: var(--font-size-sm);
+      color: #5c5c63;
+    }
+
+    .suggestions-title {
+      margin: 0;
+    }
+
+    .suggestion-item {
+      border: none;
+      background: transparent;
+      color: #3f3f47;
+      text-align: left;
+      padding: 0;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .suggestion-item:hover {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+
+    .conflict-box {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 10px;
+      align-items: stretch;
+      border: 1px solid #ebd5a7;
+      border-radius: 10px;
+      background: #fffaf1;
+      padding: 10px;
+    }
+
+    .conflict-source {
+      border: 1px solid #f1e0bc;
+      background: #fff;
+      border-radius: 8px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .conflict-source .src-id {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: #946100;
+    }
+
+    .conflict-source .facts {
+      font-size: 0.78rem;
+      color: #6e5225;
+    }
+
+    .conflict-vs {
+      align-self: center;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: #9b6a1f;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .composer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--border);
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(5px);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .composer textarea {
+      width: 100%;
+      resize: none;
+      min-height: 54px;
+      max-height: 140px;
+      padding: 12px 13px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font: inherit;
+      color: var(--text-primary);
+      line-height: 1.35;
+      background: #fff;
+    }
+
+    .composer textarea:focus {
+      outline: none;
+      border-color: var(--accent-light);
+      box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.12);
+    }
+
+    .send-btn {
+      height: 54px;
+      border: none;
+      border-radius: 12px;
+      padding: 0 18px;
+      font-weight: 600;
+      color: #fff;
+      background: linear-gradient(135deg, var(--accent), #5871ff);
+      cursor: pointer;
+      transition: transform 120ms ease, opacity 120ms ease;
+    }
+
+    .send-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .send-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .hint {
+      grid-column: 1 / -1;
+      margin: 0;
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+    }
+
+    .loading-dots {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .loading-dots span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #6e6e7a;
+      animation: pulse 900ms infinite ease-in-out;
+    }
+
+    .loading-dots span:nth-child(2) { animation-delay: 120ms; }
+    .loading-dots span:nth-child(3) { animation-delay: 240ms; }
+
+    @keyframes pulse {
+      0%, 80%, 100% { opacity: 0.35; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes reveal {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 860px) {
+      body {
+        padding: 12px;
+      }
+
+      .app {
+        height: 96vh;
+        border-radius: 16px;
+      }
+
+      .bubble {
+        width: 90%;
+      }
+
+      .conflict-box {
+        grid-template-columns: 1fr;
+      }
+
+      .conflict-vs {
+        justify-self: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <h1 class="brand-title">Dot</h1>
+        <p class="brand-subtitle">Loomo Policy Expert</p>
+      </div>
+      <div class="header-right">
+        <span class="mode" id="mode-badge">Loading mode...</span>
+        <button class="clear-btn" id="clear-btn" type="button">Clear chat</button>
+      </div>
+    </header>
+
+    <main class="chat-log" id="chat-log"></main>
+
+    <form class="composer" id="composer-form">
+      <textarea id="question-input" placeholder="Ask about Loomo policies..." aria-label="Ask a question"></textarea>
+      <button class="send-btn" id="send-btn" type="submit">Send</button>
+      <p class="hint">Press Enter to send. Press Shift+Enter for a newline.</p>
+    </form>
+  </div>
+
+  <script>
+    const chatLogEl = document.getElementById("chat-log");
+    const formEl = document.getElementById("composer-form");
+    const inputEl = document.getElementById("question-input");
+    const sendBtnEl = document.getElementById("send-btn");
+    const clearBtnEl = document.getElementById("clear-btn");
+    const modeBadgeEl = document.getElementById("mode-badge");
+    let conversationHistory = [];
+
+    const statusMap = {
+      not_in_sources: { label: "Not in sources", badgeClass: "badge-neutral", bubbleClass: "" },
+      prompt_injection_blocked: { label: "Blocked", badgeClass: "badge-blocked", bubbleClass: "blocked" },
+      conflict_in_sources: { label: "Conflict", badgeClass: "badge-conflict", bubbleClass: "conflict" },
+      unsupported_language: { label: "Unsupported language", badgeClass: "badge-neutral", bubbleClass: "" },
+      empty_input: { label: "Empty input", badgeClass: "badge-neutral", bubbleClass: "" },
+      input_too_long: { label: "Input too long", badgeClass: "badge-neutral", bubbleClass: "" },
+      rate_limited: { label: "Rate limited", badgeClass: "badge-neutral", bubbleClass: "" },
+      needs_clarification: { label: "Needs clarification", badgeClass: "badge-neutral", bubbleClass: "" },
+      retrieval_failed: { label: "System issue", badgeClass: "badge-neutral", bubbleClass: "" },
+    };
+
+    const confidenceLabelMap = {
+      high: "High confidence",
+      medium: "Medium confidence",
+      low: "Low confidence - consider verifying",
+    };
+
+    function escapeHtml(text) {
+      return (text || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function autoScroll() {
+      chatLogEl.scrollTop = chatLogEl.scrollHeight;
+    }
+
+    function buildCitations(citations) {
+      const details = document.createElement("details");
+      details.className = "citations";
+      const summary = document.createElement("summary");
+      summary.textContent = `Citations (${citations.length})`;
+      details.appendChild(summary);
+
+      citations.forEach((c) => {
+        const item = document.createElement("div");
+        item.className = "citation-item";
+
+        const id = document.createElement("div");
+        id.className = "citation-id";
+        id.textContent = `${c.doc_id} | ${c.chunk_id}`;
+
+        const quote = document.createElement("p");
+        quote.className = "citation-quote";
+        quote.textContent = `"${c.quote}"`;
+
+        item.appendChild(id);
+        item.appendChild(quote);
+        details.appendChild(item);
+      });
+
+      return details;
+    }
+
+    function buildConflictView(conflictDetails) {
+      if (!conflictDetails || !Array.isArray(conflictDetails.sources) || conflictDetails.sources.length < 2) {
+        return null;
+      }
+
+      const box = document.createElement("div");
+      box.className = "conflict-box";
+
+      const left = conflictDetails.sources[0];
+      const right = conflictDetails.sources[1];
+
+      const leftEl = document.createElement("div");
+      leftEl.className = "conflict-source";
+      leftEl.innerHTML = `
+        <div class="src-id">${escapeHtml(left.doc_id)} | ${escapeHtml(left.chunk_id)}</div>
+        <div class="facts">Values: ${escapeHtml((left.facts || []).join(", ") || "n/a")}</div>
+      `;
+
+      const vsEl = document.createElement("div");
+      vsEl.className = "conflict-vs";
+      vsEl.textContent = "vs";
+
+      const rightEl = document.createElement("div");
+      rightEl.className = "conflict-source";
+      rightEl.innerHTML = `
+        <div class="src-id">${escapeHtml(right.doc_id)} | ${escapeHtml(right.chunk_id)}</div>
+        <div class="facts">Values: ${escapeHtml((right.facts || []).join(", ") || "n/a")}</div>
+      `;
+
+      box.appendChild(leftEl);
+      box.appendChild(vsEl);
+      box.appendChild(rightEl);
+
+      return box;
+    }
+
+    function buildSuggestions(suggestions) {
+      const container = document.createElement("div");
+      container.className = "suggestions";
+
+      const title = document.createElement("p");
+      title.className = "suggestions-title";
+      title.textContent = "You might be looking for:";
+      container.appendChild(title);
+
+      suggestions.forEach((s) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "suggestion-item";
+        button.textContent = `• ${s.heading} (${s.doc_id})`;
+        button.addEventListener("click", () => sendQuestion(s.heading));
+        container.appendChild(button);
+      });
+
+      return container;
+    }
+
+    async function postFeedback(payload) {
+      try {
+        await fetch("/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } catch (error) {
+        console.error("Feedback log failed", error);
+      }
+    }
+
+    function buildFeedbackControls(options) {
+      const row = document.createElement("div");
+      row.className = "feedback-row";
+
+      const upBtn = document.createElement("button");
+      upBtn.type = "button";
+      upBtn.className = "feedback-btn";
+      upBtn.textContent = "👍";
+
+      const downBtn = document.createElement("button");
+      downBtn.type = "button";
+      downBtn.className = "feedback-btn";
+      downBtn.textContent = "👎";
+
+      const lockButtons = () => {
+        upBtn.disabled = true;
+        downBtn.disabled = true;
+      };
+
+      const handleVote = (rating, clickedBtn) => {
+        clickedBtn.classList.add("selected");
+        lockButtons();
+        postFeedback({
+          question: options.question || "",
+          answer: options.answer || "",
+          rating,
+          timestamp: new Date().toISOString(),
+          confidence: options.confidence || null,
+          failure_bucket: options.failureBucket || null,
+        });
+      };
+
+      upBtn.addEventListener("click", () => handleVote("positive", upBtn));
+      downBtn.addEventListener("click", () => handleVote("negative", downBtn));
+
+      row.appendChild(upBtn);
+      row.appendChild(downBtn);
+      return row;
+    }
+
+    function buildResponseFooter(options) {
+      const footer = document.createElement("div");
+      footer.className = "response-footer";
+
+      if (options.failureBucket === "none" && options.confidence) {
+        const confidenceEl = document.createElement("span");
+        confidenceEl.className = `confidence confidence-${options.confidence}`;
+        confidenceEl.innerHTML = `<span class="confidence-dot"></span>${confidenceLabelMap[options.confidence] || "Confidence unavailable"}`;
+        footer.appendChild(confidenceEl);
+      }
+
+      if (typeof options.responseTimeSeconds === "number" && Number.isFinite(options.responseTimeSeconds)) {
+        const timingEl = document.createElement("span");
+        timingEl.textContent = `Answered in ${options.responseTimeSeconds.toFixed(2)}s`;
+        footer.appendChild(timingEl);
+      }
+
+      if (options.enableFeedback) {
+        footer.appendChild(
+          buildFeedbackControls({
+            question: options.question,
+            answer: options.answer,
+            confidence: options.confidence,
+            failureBucket: options.failureBucket,
+          })
+        );
+      }
+
+      return footer.childNodes.length ? footer : null;
+    }
+
+    function addMessage(role, text, options = {}) {
+      const isBot = role === "bot";
+      const row = document.createElement("section");
+      row.className = `message ${isBot ? "bot" : "user"}`;
+
+      const bubble = document.createElement("article");
+      bubble.className = "bubble";
+
+      const status = options.failureBucket ? statusMap[options.failureBucket] : null;
+      if (status && status.bubbleClass) {
+        bubble.classList.add(status.bubbleClass);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const sender = document.createElement("span");
+      sender.className = "sender";
+      sender.textContent = isBot ? "Dot" : "You";
+      meta.appendChild(sender);
+
+      if (status) {
+        const badge = document.createElement("span");
+        badge.className = `badge ${status.badgeClass}`;
+        badge.textContent = status.label;
+        meta.appendChild(badge);
+      }
+
+      const body = document.createElement("div");
+      body.className = "bubble-body";
+      body.textContent = text;
+
+      bubble.appendChild(meta);
+      bubble.appendChild(body);
+
+      if (isBot && options.failureBucket === "conflict_in_sources") {
+        const conflictView = buildConflictView(options.conflictDetails);
+        if (conflictView) {
+          bubble.appendChild(conflictView);
+        }
+      }
+
+      if (
+        isBot &&
+        options.failureBucket === "not_in_sources" &&
+        Array.isArray(options.suggestions) &&
+        options.suggestions.length > 0
+      ) {
+        bubble.appendChild(buildSuggestions(options.suggestions));
+      }
+
+      if (
+        options.failureBucket !== "not_in_sources" &&
+        Array.isArray(options.citations) &&
+        options.citations.length > 0
+      ) {
+        bubble.appendChild(buildCitations(options.citations));
+      }
+
+      if (isBot) {
+        const footer = buildResponseFooter(options);
+        if (footer) {
+          bubble.appendChild(footer);
+        }
+      }
+
+      row.appendChild(bubble);
+      chatLogEl.appendChild(row);
+      autoScroll();
+      return row;
+    }
+
+    function addLoadingMessage() {
+      const row = document.createElement("section");
+      row.className = "message bot";
+      row.id = "loading-row";
+
+      const bubble = document.createElement("article");
+      bubble.className = "bubble";
+
+      bubble.innerHTML = `
+        <div class="meta">
+          <span class="sender">Dot</span>
+        </div>
+        <div class="bubble-body">Dot is thinking... <span class="loading-dots"><span></span><span></span><span></span></span></div>
+      `;
+
+      row.appendChild(bubble);
+      chatLogEl.appendChild(row);
+      autoScroll();
+    }
+
+    function removeLoadingMessage() {
+      const row = document.getElementById("loading-row");
+      if (row) row.remove();
+    }
+
+    function setSending(isSending) {
+      sendBtnEl.disabled = isSending;
+      inputEl.disabled = isSending;
+      clearBtnEl.disabled = isSending;
+    }
+
+    async function loadModeBadge() {
+      modeBadgeEl.textContent = "Mode unavailable";
+      modeBadgeEl.classList.remove("mode-llm", "mode-offline");
+      try {
+        const response = await fetch("/health");
+        const data = await response.json();
+        const mode = data.mode;
+        if (mode === "llm") {
+          modeBadgeEl.textContent = "🌐 LLM Mode";
+          modeBadgeEl.classList.add("mode-llm");
+        } else {
+          modeBadgeEl.textContent = "🔒 Offline";
+          modeBadgeEl.classList.add("mode-offline");
+        }
+      } catch {
+        modeBadgeEl.textContent = "Mode unavailable";
+      }
+    }
+
+    async function sendQuestion(questionOverride = null) {
+      const question = (questionOverride || inputEl.value).trim();
+      if (!question) return;
+
+      addMessage("user", question);
+      if (!questionOverride) {
+        inputEl.value = "";
+      }
+
+      const historyPayload = conversationHistory.slice();
+      setSending(true);
+      addLoadingMessage();
+
+      try {
+        const response = await fetch("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question,
+            history: historyPayload,
+          }),
+        });
+
+        const data = await response.json();
+        removeLoadingMessage();
+        const answerText = data.answer || "No response available.";
+
+        addMessage("bot", answerText, {
+          citations: data.citations,
+          failureBucket: data.failure_bucket,
+          conflictDetails: data.conflict_details,
+          suggestions: data.suggestions,
+          confidence: data.confidence,
+          responseTimeSeconds: data.response_time_seconds,
+          enableFeedback: true,
+          question,
+          answer: answerText,
+        });
+
+        conversationHistory.push({ role: "user", content: question });
+        conversationHistory.push({ role: "assistant", content: answerText });
+      } catch (error) {
+        removeLoadingMessage();
+        const fallbackMessage = "I hit a temporary issue while answering. I'd recommend reaching out to our support team for clarification.";
+        addMessage(
+          "bot",
+          fallbackMessage,
+          {
+            failureBucket: "retrieval_failed",
+            responseTimeSeconds: null,
+            enableFeedback: true,
+            question,
+            answer: fallbackMessage,
+            confidence: "low",
+          }
+        );
+        console.error(error);
+      } finally {
+        setSending(false);
+        inputEl.focus();
+      }
+    }
+
+    clearBtnEl.addEventListener("click", () => {
+      chatLogEl.innerHTML = "";
+      conversationHistory = [];
+      addMessage("bot", "Hi, I'm Dot. Ask me anything about Loomo policies, and I'll answer from our policy documents.");
+      inputEl.focus();
+    });
+
+    formEl.addEventListener("submit", (event) => {
+      event.preventDefault();
+      sendQuestion();
+    });
+
+    inputEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendQuestion();
+      }
+    });
+
+    loadModeBadge();
+    addMessage("bot", "Hi, I'm Dot. Ask me anything about Loomo policies, and I'll answer from our policy documents.");
+    inputEl.focus();
+  </script>
+</body>
+</html>

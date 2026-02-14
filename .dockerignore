@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__/
+*.pyc
+.DS_Store
+output/
+promptarmor/
+promptarmor_v1_original/
+evals/results/
+logs/
+.pytest_cache/
