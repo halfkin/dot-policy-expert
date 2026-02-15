@@ -16,6 +16,10 @@ Built for a fictional SaaS company (Loomo) as a portfolio project. The same arch
 
 ![Follow-up question demo](docs/2step_question.gif)
 
+**Handling bilingual input (French/Spanish translated to English retrieval):**
+
+![Bilingual input demo](docs/BilingualDot.gif)
+
 **Blocking a prompt injection attempt:**
 
 ![Prompt injection blocked](docs/Promptinjection.gif)
@@ -48,7 +52,7 @@ User question
 
 **Grounding:** Every factual answer cites at least one KB chunk. If no chunks are relevant, the response is exactly: "Not in sources." No hedging, no hallucination.
 
-**Multilingual Input:** Accepts questions in French and Spanish, translates to English via OpenRouter, then runs the standard retrieval and generation pipeline. Responses are in English. Other languages are rejected gracefully. This enables support teams serving North American markets (English, French, Spanish) without maintaining separate knowledge bases per language.
+**Multilingual Input:** Accepts questions in French and Spanish, translates them to English via OpenRouter, then runs the standard retrieval and generation pipeline. Responses are returned in English, and the UI indicates when a question was translated. Other languages are rejected gracefully. This supports North American teams (English, French, Spanish) without maintaining separate knowledge bases per language.
 
 ## Behavioral Contracts
 
