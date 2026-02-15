@@ -69,21 +69,28 @@ Every response is validated against five invariants:
 
 ## Eval Results
 
-75-question benchmark covering: direct retrieval, cross-document, paraphrased, adversarial, conflict detection, edge cases, and reasoning.
+Current benchmark run (79 questions) covers: direct retrieval, cross-document, paraphrased, adversarial, conflict detection, edge cases, multilingual, and reasoning.
 
-| Category | Pass Rate |
-|----------|-----------|
-| Direct retrieval | 100% |
-| Not in sources | 100% |
-| Adversarial | 89% |
-| Cross-document | 88% |
-| Conflict detection | 86% |
-| Paraphrased | 71% |
-| **Overall** | **83% (62/75)** |
+### LLM-Mode Reranker A/B (2026-02-15)
+
+| Config | Overall Pass Rate | Paraphrased | Avg Runtime |
+|--------|-------------------|-------------|-------------|
+| Baseline (`RERANKER_ENABLED=false`) | 77.2% (61/79) | 85.7% (6/7) | 208.02s/run |
+| Reranker (`RERANKER_ENABLED=true`) | **82.3% (65/79)** | 85.7% (6/7) | 218.84s/run |
+
+**Delta:** +5.1 points overall, 0-point change in paraphrased, no category regressions.
+
+### What Changed
+
+- Blended retrieval now returns top-20 candidates first.
+- Added cross-encoder second-pass reranking (`cross-encoder/ms-marco-MiniLM-L-6-v2`) down to top-3.
+- Re-ranked top-3 now feed conflict detection and answer generation.
+- Fail-open behavior preserved: if reranker is unavailable, retrieval falls back to original ranking.
+- Added reranker metadata (`reranker_active`) and eval fingerprint fields (`reranker_enabled`, `reranker_model`).
 
 Every eval run classifies failures by root cause — retrieval failures (wrong chunk found) vs generation failures (right chunk, bad answer). This matters because the fix is different: retrieval failures need better search, generation failures need better prompting.
 
-**LLM Judge:** Average 2.4/3.0 across all 75 responses.
+**LLM Judge:** Optional pass used for qualitative scoring.
 
 ### How It Got Here
 
@@ -150,7 +157,7 @@ Python 3.11, FastAPI, sentence-transformers (all-MiniLM-L6-v2, cross-encoder/ms-
 
 ## What I'd Change With More Time
 
-**Retrieval:** Vector DB (ChromaDB/Qdrant) for scale, cross-encoder re-ranker for accuracy, response caching for the 40%+ of queries that are duplicates.
+**Retrieval:** Vector DB (ChromaDB/Qdrant) for scale, reranker score calibration per query type, response caching for the 40%+ of queries that are duplicates.
 
 **Eval:** A/B testing for prompt changes, CI pipeline that fails the build if pass rate drops.
 
