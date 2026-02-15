@@ -1,4 +1,4 @@
-# Dot: Loomo Policy Expert Chatbot
+# Dot: Policy Expert Chatbot
 
 Support teams waste hours searching for policy answers scattered across documents. When they find them, sometimes two documents say different things — and nobody notices until a customer complains.
 
