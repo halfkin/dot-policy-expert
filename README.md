@@ -1,71 +1,37 @@
 # Dot: Loomo Policy Expert Chatbot
 
-Dot is a grounded policy chatbot for a fictional SaaS company called Loomo. It answers questions strictly from local markdown policy documents, cites its sources, blocks prompt injection attempts, and flags contradictory policy information across documents.
+Support teams waste hours searching for policy answers scattered across documents. When they find them, sometimes two documents say different things — and nobody notices until a customer complains.
 
-![Demo GIF Placeholder](docs/demo.gif)
+Dot fixes this. It's a grounded RAG chatbot that answers policy questions from a markdown knowledge base, cites every response, refuses to guess when it doesn't know, and flags when two documents contradict each other.
 
-## Features
+Built for a fictional SaaS company (Loomo) as a portfolio project. The same architecture works for both internal use (employees querying HR policies, engineering runbooks, onboarding docs) and external use (customers self-serving on billing, refunds, and account policies). Swap the knowledge base, and Dot adapts to either context.
 
-- **Grounded retrieval** over 10 local markdown policy documents
-- **LLM-first answering** via OpenRouter with offline fallback
-- **Blended retrieval** combining keyword scoring and semantic embeddings (sentence-transformers, all-MiniLM-L6-v2)
-- **Query reformulation** — rewrites vague inputs into retrieval-friendly queries (LLM mode only, preserves original question for answer generation)
-- **Conversation context** with follow-up-aware retrieval (LLM mode only)
-- **Prompt injection defense** — 4-layer Ravelin pipeline with dual-classifier consensus
-- **Conflict detection** — flags contradictory facts across and within policy documents
-- **Source citations** with chunk-level references on every factual answer
-- **Confidence scoring** (high/medium/low) and response time metadata
-- **"Did you mean?" suggestions** with clickable follow-ups on out-of-scope questions
-- **Thumbs up/down feedback** logged to `logs/feedback.jsonl`
-- **Language detection** with graceful English-only handling
-- **75-question eval suite** with keyword scoring, LLM-as-judge grading, retrieval vs generation failure diagnosis, and fingerprinted reproducible runs
+## See It In Action
 
-## Security & Threat Model
+**Answering a policy question with citations:**
 
-### Threats Considered
-- Prompt injection and jailbreak attempts
-- Cost abuse (forcing expensive LLM classifier paths on every request)
-- API endpoint abuse (spam/DoS)
-- Knowledge base data sensitivity
+![Regular question demo](docs/Dotregualr.gif)
 
-### Controls Implemented
-- **4-layer prompt injection defense** with Lakera + OpenRouter consensus
-- **Behavioral contract tests** enforcing grounding, refusal, and safety invariants
-- **Request size limit** (10,000 characters) + empty input validation
-- **Rate limiting** (20 requests/minute per IP)
-- **Tiered routing** — suspicious inputs escalate to hardened LLM classifier path; normal traffic stays in Tier 0
-- **Secrets management** — all keys via environment variables, never in repo
-- **Debug output disabled** by default in production
+**Handling a two-step follow-up:**
 
-### Production Hardening (Not Implemented)
-Out of scope for a portfolio project, but would be required for real deployment:
-- WAF/bot protection (Cloudflare)
-- User authentication and per-user quotas
-- Centralized secret management (Vault/KMS)
-- Security monitoring and alerting
-- Vulnerability scanning in CI/CD
-- KB access segmentation (internal vs public docs)
+![Follow-up question demo](docs/2step_question.gif)
 
-## Behavioral Contracts
+**Blocking a prompt injection attempt:**
 
-Every response is validated against five invariants:
+![Prompt injection blocked](docs/Promptinjection.gif)
 
-| Invariant | Rule |
-|-----------|------|
-| **Grounding** | Every factual answer cites at least one KB chunk |
-| **Unknown** | No KB support → exact prefix `Not in sources.` |
-| **Safety** | Prompt injection → blocked before retrieval |
-| **Conflict** | Contradictory sources → flag both, recommend escalation |
-| **Cost** | Normal traffic stays in Tier 0 — no unnecessary LLM classifier calls |
+## Why This Exists
 
-These contracts are enforced by the eval suite on every run.
+Most RAG demos show a chatbot answering questions. That's table stakes. The hard problems are everything else: What happens when the AI is wrong? When two source documents disagree? When someone tries to manipulate the system? When the retrieval finds the wrong chunk?
 
-## Architecture
+Dot is built around those failure modes — not just the happy path.
+
+## How It Works
 
 ```
 User question
   → Language Detection (non-English → rejected)
-  → Ravelin (4-layer injection defense)
+  → Ravelin (4-layer prompt injection defense)
   → Query Reformulation (LLM mode: rewrite vague inputs)
   → Follow-up Context Resolution (merge with prior turn if needed)
   → Blended Retrieval (keyword + semantic embedding, top-k with threshold)
@@ -74,142 +40,116 @@ User question
   → Response: answer + citations + confidence + failure bucket
 ```
 
-### Key Files
-| Path | Purpose |
-|------|---------|
-| `backend/app.py` | FastAPI server — `/health`, `/chat`, `/feedback`, retrieval, response logic |
-| `backend/ravelin.py` | 4-layer input security scanning |
-| `backend/embedder.py` | Semantic embeddings + similarity scoring (sentence-transformers with hash fallback) |
-| `backend/query_reformulator.py` | LLM-based retrieval query rewriting |
-| `backend/conflict_detector.py` | Cross-doc and within-doc contradiction detection |
-| `frontend/index.html` | Chat UI — mode badge, confidence dots, citations, suggestions, feedback |
-| `kb/*.md` | 10 policy documents for Loomo Inc. |
-| `evals/questions.json` | 75-question benchmark (direct, cross-doc, paraphrased, edge-case, adversarial, conflict, reasoning) |
-| `evals/run_evals.py` | Eval runner — keyword scoring, failure diagnosis, optional LLM judge |
-| `evals/verify_advanced.py` | Contract verifier with per-question trace and fingerprinted output |
+**Retrieval:** Blended keyword + semantic embedding scoring (sentence-transformers, all-MiniLM-L6-v2). Query reformulation rewrites vague inputs into retrieval-friendly queries without altering the original question for answer generation.
+
+**Security (Ravelin):** 4-layer defense pipeline. Layer 0: input length and entropy checks. Layer 1: HTML sanitization. Layer 2: regex pattern matching. Layer 3: dual-classifier consensus — both Lakera Guard and an OpenRouter classifier must agree before blocking. This eliminated false positives on legitimate questions.
+
+**Conflict Detection:** Extracts numeric facts from retrieved chunks and flags contradictions across documents (e.g., one doc says 30-day data deletion, another says 45 days). Surfaces both sources instead of silently picking one.
+
+**Grounding:** Every factual answer cites at least one KB chunk. If no chunks are relevant, the response is exactly: "Not in sources." No hedging, no hallucination.
+
+## Behavioral Contracts
+
+Every response is validated against five invariants:
+
+| Contract | Rule |
+|----------|------|
+| **Grounding** | Every factual answer cites at least one KB chunk |
+| **Unknown** | No KB support → exact prefix `Not in sources.` |
+| **Safety** | Prompt injection → blocked before retrieval |
+| **Conflict** | Contradictory sources → flag both, recommend escalation |
+| **Cost** | Normal traffic stays in Tier 0 — no unnecessary LLM classifier calls |
 
 ## Eval Results
 
-**Latest run:** run `python evals/run_evals.py` to generate fresh results.
+75-question benchmark covering: direct retrieval, cross-document, paraphrased, adversarial, conflict detection, edge cases, and reasoning.
 
 | Category | Pass Rate |
 |----------|-----------|
-| Direct retrieval | 100.0% |
-| Cross-document | 87.5% |
-| Not in sources | 100.0% |
-| Conflict detection | 85.7% |
-| Adversarial | 88.9% |
-| Paraphrased | 71.4% |
-| **Overall** | **82.7% (62/75)** |
+| Direct retrieval | 100% |
+| Not in sources | 100% |
+| Adversarial | 89% |
+| Cross-document | 88% |
+| Conflict detection | 86% |
+| Paraphrased | 71% |
+| **Overall** | **83% (62/75)** |
 
-**LLM Judge:** 75 responses graded, average 2.4/3.0 (distribution: 3=49, 2=12, 1=9, 0=5)
+Every eval run classifies failures by root cause — retrieval failures (wrong chunk found) vs generation failures (right chunk, bad answer). This matters because the fix is different: retrieval failures need better search, generation failures need better prompting.
 
-### Failure Analysis
+**LLM Judge:** Average 2.4/3.0 across all 75 responses.
 
-Every eval run classifies failures by root cause:
+### How It Got Here
 
-| Failure Type | Count | Meaning |
-|---|---|---|
-| Retrieval failures | 0 | Correct chunk was always found |
-| Generation failures | 8 | Right chunk retrieved, LLM answer missed expected terms |
-| Safety regressions | 1 | One adversarial input not blocked |
+| Phase | Pass Rate | What Changed |
+|-------|-----------|------------|
+| Baseline | 52% | First eval harness |
+| Phase 5 | 60% | Synonym expansion, heading boost |
+| Phase 7 | 70% | Follow-up context, confidence scoring |
+| Post-polish | 76% | Embeddings, query reformulation |
+| Final | 83% | System prompt rewrite, conflict gating fixes |
 
-This separation matters because the fix is different: retrieval failures need better search, generation failures need better prompting.
+### What Broke Along the Way
 
-### Eval Progression
+| Change | What Broke | Fix |
+|--------|-----------|-----|
+| Ravelin Layer 3 | Legitimate questions falsely blocked | Dual-classifier consensus |
+| Threshold refactor | Configured vs effective threshold diverged | Centralized threshold helper |
+| Not-in-sources wording | Exact prefix contract violated | Single response helper |
+| Conflict detection | Values surfaced but not flagged | Explicit conflict cue detection |
+| Blend weights | Summed to 1.3 instead of 1.0 | Env vars with startup validation |
 
-| Phase | Questions | Pass Rate | Key Change |
-|-------|-----------|-----------|------------|
-| Phase 4 (baseline) | 50 | 52% | First eval harness |
-| Phase 5 | 50 | 60% | Synonym expansion, heading boost, top-k |
-| Phase 7 | 50 | 70% | Follow-up context, confidence scoring |
-| Post-polish | 75 | 76% | Embeddings, query reformulation, 25 tricky questions added |
-| Final | 75 | 82.7% | System prompt rewrite, conflict gating fixes |
+Every eval run is fingerprinted (commit hash, mode, KB hash, thresholds, blend weights) so results are reproducible.
 
-### Eval Reproducibility
+## Security
 
-Every eval run outputs a fingerprint containing: commit hash, mode, pipeline, KB hash, questions hash, retrieval thresholds, embedding model, and blend weights. Two runs with the same fingerprint produce the same results.
+**Threats considered:** Prompt injection, cost abuse (forcing expensive LLM paths), API abuse (spam/DoS), KB data sensitivity.
 
-## Regression Story
+**Controls:** 4-layer injection defense with consensus blocking, request size limits (10K chars), rate limiting (20/min per IP), tiered routing (suspicious inputs escalate, normal traffic stays cheap), secrets via env vars, debug disabled by default.
 
-| Change | What Broke | Fix | Prevention |
-|--------|-----------|-----|------------|
-| Ravelin Layer 3 integration | Legitimate questions falsely blocked | Lakera + OpenRouter consensus required | Regression tests on affected questions |
-| Retrieval threshold refactor | Configured threshold (0.18) vs effective threshold diverged | Centralized threshold helper | Config fingerprint on every eval run |
-| Not-in-sources wording | Exact prefix contract violated | Single response helper for all refusal paths | Canary tests enforce exact prefix |
-| Conflict detection | Contradictory values surfaced but not flagged as conflict | Explicit conflict cue detection added | Within-doc scan on cue-triggered queries |
-| Blend weight config | Weights summed to 1.3 instead of 1.0 | Fixed to keyword=0.4, semantic=0.6 | Env vars with startup validation |
-
-## Documentation
-
-- [Failure Mode Catalog](docs/FAILURE_MODES.md) — Every way the system can fail, what the user sees, and what to do about it
-- [Cost Analysis](docs/COST_ANALYSIS.md) — Per-query cost breakdown and monthly estimates
-- [Customer Journeys](docs/CUSTOMER_JOURNEYS.md) — 7 end-to-end scenarios showing how the system handles real support situations
-- [Verification Plan](docs/PLANS.md) — Milestone-based verification checklist used during development
+**Not implemented (out of scope for portfolio):** WAF, user auth, centralized secret management, security monitoring, CI vulnerability scanning.
 
 ## Quick Start
 
-### Local (offline mode)
 ```bash
-git clone https://github.com/cameronwoloshyn/dot-policy-expert.git
-cd dot-policy-expert
-python3 -m venv .venv
-source .venv/bin/activate
+# Clone and install
+git clone https://github.com/halfkin/company-policy-chatbot.git
+cd company-policy-chatbot
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# Run in offline mode (no API key needed)
 ./run_offline.sh
-```
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
-### Local (LLM mode)
-```bash
-cp .env.example .env
-# Add your OPENROUTER_API_KEY to .env
+# Or run in LLM mode
+cp .env.example .env   # add OPENROUTER_API_KEY
 ./run_online.sh
-```
 
-### Docker
-```bash
+# Or via Docker
 docker compose up --build
 ```
+
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|-----------|
-| Backend | Python 3.11, FastAPI, Uvicorn |
-| Embeddings | sentence-transformers (all-MiniLM-L6-v2) |
-| LLM | OpenRouter (GPT-4o-mini) |
-| Security | Ravelin (custom) + Lakera Guard |
-| Eval | Custom harness with LLM-as-judge scoring |
-| Frontend | Vanilla HTML/CSS/JS |
-| Deployment | Docker, Caddy (reverse proxy) |
+Python 3.11, FastAPI, sentence-transformers (all-MiniLM-L6-v2), OpenRouter (GPT-4o-mini), Lakera Guard, vanilla HTML/CSS/JS frontend, Docker + Caddy.
+
+## Documentation
+
+- [Failure Mode Catalog](docs/FAILURE_MODES.md) — Every way the system can fail and what to do about it
+- [Cost Analysis](docs/COST_ANALYSIS.md) — Per-query cost breakdown and monthly estimates
+- [Customer Journeys](docs/CUSTOMER_JOURNEYS.md) — 7 end-to-end scenarios
+- [Verification Plan](docs/PLANS.md) — Milestone-based development checklist
 
 ## What I'd Change With More Time
 
-If this were a real production system:
+**Retrieval:** Vector DB (ChromaDB/Qdrant) for scale, cross-encoder re-ranker for accuracy, response caching for the 40%+ of queries that are duplicates.
 
-**Retrieval improvements:**
-- Replace keyword + lightweight embeddings with a proper vector DB (ChromaDB or Qdrant) — current approach works for 10 docs but won't scale past ~100
-- Add a cross-encoder re-ranker as a second retrieval pass — would fix remaining retrieval failures where the right chunk scores lower than irrelevant chunks
-- Implement response caching for repeated questions — 40%+ of support queries are duplicates
+**Eval:** A/B testing for prompt changes, CI pipeline that fails the build if pass rate drops.
 
-**Evaluation improvements:**
-- A/B testing framework for system prompt changes — prompt tuning should be evaluated the same way code changes are
-- Automated regression detection: run eval suite in CI on every commit, fail the build if pass rate drops
+**Operations:** Feedback loop (thumbs-down → human review → KB update), gap reporting (track unanswered questions), usage analytics.
 
-**Operational improvements:**
-- Feedback loop: thumbs-down responses automatically flag for human review and KB updates
-- Gap reporting: track "Not in sources" queries and surface to the admin as missing documentation
-- Usage analytics dashboard: questions per day, top topics, busiest hours, unanswered rate
-
-**Product improvements:**
-- Document ingestion pipeline (PDF, DOCX -> chunked markdown)
-- Admin portal for KB management without touching code
-- Embeddable widget (single script tag for client websites)
-- Voice input/output (Web Speech API + TTS)
-- Escalation flow with pre-filled support ticket
-- Multi-tenant support with per-client KB isolation
+**Product:** Document ingestion pipeline (PDF/DOCX), admin portal, embeddable widget, voice I/O, escalation flow, multi-tenant support.
 
 ## Author
 
