@@ -257,6 +257,14 @@
 
     .message.user .bubble-body { color: var(--text-on-dark); }
 
+    .translation-note {
+      font-size: 0.78rem;
+      color: var(--text-light);
+      font-style: italic;
+      margin-top: -2px;
+      margin-bottom: -4px;
+    }
+
     /* ─── Citations ─── */
     details.citations {
       border: 1px solid var(--border);
@@ -655,6 +663,11 @@
       low: "Low confidence — consider verifying",
     };
 
+    const translatedFromLabelMap = {
+      fr: "French",
+      es: "Spanish",
+    };
+
     function escapeHtml(text) {
       return (text || "")
         .replaceAll("&", "&amp;")
@@ -662,6 +675,11 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+    }
+
+    function renderBotMarkdown(text) {
+      const escaped = escapeHtml(text || "");
+      return escaped.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
     }
 
     function autoScroll() {
@@ -750,6 +768,14 @@
       });
 
       return container;
+    }
+
+    function buildTranslationNote(languageCode) {
+      const note = document.createElement("div");
+      note.className = "translation-note";
+      const label = translatedFromLabelMap[languageCode] || languageCode;
+      note.textContent = `Translated from ${label}`;
+      return note;
     }
 
     async function postFeedback(payload) {
@@ -864,9 +890,16 @@
 
       const body = document.createElement("div");
       body.className = "bubble-body";
-      body.textContent = text;
+      if (isBot) {
+        body.innerHTML = renderBotMarkdown(text);
+      } else {
+        body.textContent = text;
+      }
 
       bubble.appendChild(meta);
+      if (isBot && options.translatedFrom) {
+        bubble.appendChild(buildTranslationNote(options.translatedFrom));
+      }
       bubble.appendChild(body);
 
       if (isBot && options.failureBucket === "conflict_in_sources") {
@@ -990,6 +1023,7 @@
           failureBucket: data.failure_bucket,
           conflictDetails: data.conflict_details,
           suggestions: data.suggestions,
+          translatedFrom: data.translated_from,
           confidence: data.confidence,
           responseTimeSeconds: data.response_time_seconds,
           enableFeedback: true,

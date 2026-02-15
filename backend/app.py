@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 from pathlib import Path
 from contextlib import asynccontextmanager
 from collections import deque
@@ -116,6 +116,7 @@ FOLLOWUP_SIGNALS = [
     "how does that",
 ]
 PRONOUNS = ["it", "that", "this", "those", "them", "they"]
+SUPPORTED_LANGUAGES = {"en", "fr", "es"}
 
 # ----- Request/Response Types -----
 
@@ -168,6 +169,9 @@ class ChatResponse(BaseModel):
     suggestions: List[Suggestion] = Field(default_factory=list)
     response_time_seconds: float
     detected_language: Optional[str] = None
+    translated_from: Optional[Literal["fr", "es"]] = None
+    original_query: Optional[str] = None
+    retrieval_query: Optional[str] = None
     debug: Optional[dict] = None
 
 # ----- Helpers (RAG-lite) -----
@@ -286,6 +290,8 @@ def check_language(text: str) -> Optional[str]:
             return "fr"
         if re.search(r"[\u4e00-\u9fff]", sample):
             return "zh"
+        if re.search(r"[\uac00-\ud7af]", sample):
+            return "ko"
         return None
     try:
         ranked = detect_langs(sample) if detect_langs else []  # type: ignore[misc]
@@ -302,6 +308,41 @@ def check_language(text: str) -> Optional[str]:
         return detect(sample)  # type: ignore[misc]
     except LangDetectException:
         return None
+
+
+def translate_to_english(text: str, source_lang: str) -> str:
+    """Translate French or Spanish input to English using OpenRouter."""
+    if source_lang == "en":
+        return text
+    if source_lang not in {"fr", "es"}:
+        raise ValueError(f"Unsupported translation source language: {source_lang}")
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a translator. Translate the following text to English. "
+                    "Return ONLY the translation, nothing else."
+                ),
+            },
+            {"role": "user", "content": text},
+        ],
+        "temperature": 0.0,
+    }
+    response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=20)
+    if not response.ok:
+        raise RuntimeError(f"Translation request failed: HTTP {response.status_code}")
+    data = response.json()
+    translated = data["choices"][0]["message"]["content"].strip()
+    if not translated:
+        raise RuntimeError("Translation response was empty")
+    return translated
 
 
 def is_likely_followup(question: str, history: List[ConversationTurn]) -> bool:
@@ -819,6 +860,9 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
             "suggestions": [],
             "response_time_seconds": 0.0,
             "detected_language": None,
+            "translated_from": None,
+            "original_query": None,
+            "retrieval_query": None,
             "debug": None,
         },
     )
@@ -839,6 +883,9 @@ def chat(request: Request, req: ChatRequest):
     raw_question = req.question or ""
     q = raw_question.strip()
     history = req.history or []
+    request_translated_from: Optional[Literal["fr", "es"]] = None
+    request_original_query: Optional[str] = None
+    request_retrieval_query: Optional[str] = None
 
     def make_response(
         *,
@@ -861,9 +908,21 @@ def chat(request: Request, req: ChatRequest):
         conflict_details: Optional[dict] = None,
         suggestions: Optional[List[Suggestion]] = None,
         detected_language: Optional[str] = None,
+        translated_from: Optional[Literal["fr", "es"]] = None,
+        original_query: Optional[str] = None,
+        retrieval_query: Optional[str] = None,
         debug: Optional[dict] = None,
     ) -> ChatResponse:
         elapsed = round(time.perf_counter() - started_at, 2)
+        resolved_translated_from = (
+            translated_from if translated_from is not None else request_translated_from
+        )
+        resolved_original_query = (
+            original_query if original_query is not None else request_original_query
+        )
+        resolved_retrieval_query = (
+            retrieval_query if retrieval_query is not None else request_retrieval_query
+        )
         return ChatResponse(
             answer=answer,
             citations=citations,
@@ -874,6 +933,9 @@ def chat(request: Request, req: ChatRequest):
             suggestions=suggestions or [],
             response_time_seconds=elapsed,
             detected_language=detected_language,
+            translated_from=resolved_translated_from,
+            original_query=resolved_original_query,
+            retrieval_query=resolved_retrieval_query,
             debug=debug if SHOW_DEBUG else None,
         )
 
@@ -893,6 +955,52 @@ def chat(request: Request, req: ChatRequest):
             failure_bucket="input_too_long",
         )
 
+    detected_language = check_language(q)
+    if detected_language and detected_language != "en":
+        if detected_language not in SUPPORTED_LANGUAGES:
+            return make_response(
+                answer=(
+                    "I currently support English, plus French and Spanish in LLM mode. "
+                    f"Please rephrase your question in English. {CUSTOMER_SUPPORT_LINE}"
+                ),
+                citations=[],
+                confidence="low",
+                failure_bucket="unsupported_language",
+                detected_language=detected_language,
+            )
+
+        if not USE_LLM or not OPENROUTER_API_KEY:
+            return make_response(
+                answer=(
+                    "French and Spanish input requires LLM mode with translation enabled. "
+                    f"Please rephrase your question in English. {CUSTOMER_SUPPORT_LINE}"
+                ),
+                citations=[],
+                confidence="low",
+                failure_bucket="unsupported_language",
+                detected_language=detected_language,
+            )
+
+        try:
+            translated_query = translate_to_english(q, detected_language)
+        except Exception as e:
+            print(f"[Translate] Translation failed: {type(e).__name__}: {e}")
+            return make_response(
+                answer=(
+                    "I couldn't translate that request right now. "
+                    f"Please ask in English. {CUSTOMER_SUPPORT_LINE}"
+                ),
+                citations=[],
+                confidence="low",
+                failure_bucket="unsupported_language",
+                detected_language=detected_language,
+            )
+
+        request_translated_from = cast(Literal["fr", "es"], detected_language)
+        request_original_query = q
+        q = translated_query.strip()
+        request_retrieval_query = q
+
     scan_result = scan_input(q, use_llm_judge=USE_LLM)
     if scan_result["status"] == "BLOCKED":
         return make_response(
@@ -904,13 +1012,13 @@ def chat(request: Request, req: ChatRequest):
             confidence="low",
             failure_bucket="prompt_injection_blocked",
             blocked_by=scan_result["blocked_by"],
+            detected_language=detected_language,
         )
 
-    detected_language = check_language(q)
-    if detected_language and detected_language != "en":
+    if detected_language and detected_language != "en" and not q:
         return make_response(
             answer=(
-                "I currently only support English. Please rephrase your question in English. "
+                "I couldn't translate that request right now. "
                 f"{CUSTOMER_SUPPORT_LINE}"
             ),
             citations=[],
@@ -932,18 +1040,26 @@ def chat(request: Request, req: ChatRequest):
         )
 
     retrieval_query = q
+    if request_translated_from:
+        request_retrieval_query = retrieval_query
     if USE_LLM and is_likely_followup(q, history):
         prev_question = get_last_user_message(history)
         if prev_question:
             retrieval_query = f"{prev_question} {q}"
+            if request_translated_from:
+                request_retrieval_query = retrieval_query
 
     if USE_LLM:
         retrieval_query = reformulate_query(retrieval_query, use_llm=True)
+        if request_translated_from:
+            request_retrieval_query = retrieval_query
 
     debug_info = {
-        "original_query": q,
+        "original_query": request_original_query or q,
         "retrieval_query": retrieval_query,
     }
+    if request_translated_from:
+        debug_info["translated_from"] = request_translated_from
 
     raw_q_tokens = tokenize(retrieval_query)
     q_tokens = expand_query_tokens(retrieval_query, raw_q_tokens)

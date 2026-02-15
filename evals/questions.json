@@ -827,5 +827,52 @@
     "expected_answer_contains": [],
     "expected_source": null,
     "note": "Empty/whitespace-only input. Should handle gracefully without crashing or hallucinating."
+  },
+  {
+    "id": 76,
+    "question": "Quelle est la politique de remboursement pour le plan Standard?",
+    "category": "multilingual",
+    "expected_behavior": "answer",
+    "expected_answer_contains": [
+      "14-day",
+      "refund"
+    ],
+    "expected_source": "refunds.md",
+    "note": "French input should translate to English in LLM mode and answer using refunds source."
+  },
+  {
+    "id": 77,
+    "question": "¿Cuántos días tengo para obtener un reembolso en el plan Enterprise?",
+    "category": "multilingual",
+    "expected_behavior": "answer",
+    "expected_answer_contains": [
+      "30-day",
+      "refund"
+    ],
+    "expected_source": "refunds.md",
+    "note": "Spanish input should translate to English in LLM mode and return Enterprise refund window."
+  },
+  {
+    "id": 78,
+    "question": "Est-ce que les connexions partagées sont autorisées?",
+    "category": "multilingual",
+    "expected_behavior": "answer",
+    "expected_answer_contains": [
+      "shared login",
+      "prohibited"
+    ],
+    "expected_source": "accounts.md",
+    "note": "French input should translate and answer from account policy language about shared logins."
+  },
+  {
+    "id": 79,
+    "question": "이것은 한국어 질문입니다",
+    "category": "multilingual",
+    "expected_behavior": "unsupported_language",
+    "expected_answer_contains": [
+      "unsupported language"
+    ],
+    "expected_source": null,
+    "note": "Unsupported non-English language should be rejected gracefully."
   }
 ]

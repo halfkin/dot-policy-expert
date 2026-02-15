@@ -2,7 +2,7 @@
 
 Support teams waste hours searching for policy answers scattered across documents. When they find them, sometimes two documents say different things — and nobody notices until a customer complains.
 
-Dot fixes this. It's a grounded RAG chatbot that answers policy questions from a markdown knowledge base, cites every response, refuses to guess when it doesn't know, and flags when two documents contradict each other.
+Dot fixes this. It's a grounded RAG chatbot that answers policy questions from a markdown knowledge base, cites every response, refuses to guess when it doesn't know, flags when two documents contradict each other, and accepts questions in French and Spanish.
 
 Built for a fictional SaaS company (Loomo) as a portfolio project. The same architecture works for both internal use (employees querying HR policies, engineering runbooks, onboarding docs) and external use (customers self-serving on billing, refunds, and account policies). Swap the knowledge base, and Dot adapts to either context.
 
@@ -30,7 +30,7 @@ Dot is built around those failure modes — not just the happy path.
 
 ```
 User question
-  → Language Detection (non-English → rejected)
+  → Language Detection (French/Spanish → translate to English in LLM mode; other languages → rejected)
   → Ravelin (4-layer prompt injection defense)
   → Query Reformulation (LLM mode: rewrite vague inputs)
   → Follow-up Context Resolution (merge with prior turn if needed)
@@ -47,6 +47,8 @@ User question
 **Conflict Detection:** Extracts numeric facts from retrieved chunks and flags contradictions across documents (e.g., one doc says 30-day data deletion, another says 45 days). Surfaces both sources instead of silently picking one.
 
 **Grounding:** Every factual answer cites at least one KB chunk. If no chunks are relevant, the response is exactly: "Not in sources." No hedging, no hallucination.
+
+**Multilingual Input:** Accepts questions in French and Spanish, translates to English via OpenRouter, then runs the standard retrieval and generation pipeline. Responses are in English. Other languages are rejected gracefully. This enables support teams serving North American markets (English, French, Spanish) without maintaining separate knowledge bases per language.
 
 ## Behavioral Contracts
 
