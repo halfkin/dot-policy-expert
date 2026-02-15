@@ -6,6 +6,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from collections import deque
 from functools import wraps
+import logging
 import os
 import re
 import json
@@ -19,6 +20,14 @@ from backend.ravelin import scan_input
 from backend.conflict_detector import check_for_conflicts
 from backend.embedder import embed_chunks, semantic_search, get_embedding_runtime_info
 from backend.query_reformulator import reformulate_query
+from backend.reranker import (
+    RERANKER_ENABLED,
+    RERANKER_MODEL,
+    rerank,
+    reranker_active,
+)
+
+logger = logging.getLogger(__name__)
 
 try:
     from slowapi import Limiter
@@ -172,6 +181,7 @@ class ChatResponse(BaseModel):
     translated_from: Optional[Literal["fr", "es"]] = None
     original_query: Optional[str] = None
     retrieval_query: Optional[str] = None
+    reranker_active: bool = False
     debug: Optional[dict] = None
 
 # ----- Helpers (RAG-lite) -----
@@ -185,6 +195,7 @@ STOPWORDS = {
 
 TIME_TOKENS = {"long", "within", "day", "days", "week", "weeks", "time", "duration"}
 TOP_K = 3
+INITIAL_RETRIEVAL_TOP_K = 20
 MIN_RETRIEVAL_SCORE = 0.18
 BLEND_KEYWORD_WEIGHT = float(os.getenv("BLEND_KEYWORD_WEIGHT", "0.4"))
 BLEND_SEMANTIC_WEIGHT = float(os.getenv("BLEND_SEMANTIC_WEIGHT", "0.6"))
@@ -819,6 +830,7 @@ def call_openrouter(
 
 def warm_kb_embeddings() -> None:
     get_kb_chunks_cached(refresh=True)
+    logger.info("Reranker: %s (%s)", "enabled" if RERANKER_ENABLED else "disabled", RERANKER_MODEL)
     embedding_info = get_embedding_runtime_info()
     if embedding_info["using_sentence_transformer"]:
         print(
@@ -863,6 +875,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
             "translated_from": None,
             "original_query": None,
             "retrieval_query": None,
+            "reranker_active": False,
             "debug": None,
         },
     )
@@ -911,6 +924,7 @@ def chat(request: Request, req: ChatRequest):
         translated_from: Optional[Literal["fr", "es"]] = None,
         original_query: Optional[str] = None,
         retrieval_query: Optional[str] = None,
+        reranker_active_flag: bool = False,
         debug: Optional[dict] = None,
     ) -> ChatResponse:
         elapsed = round(time.perf_counter() - started_at, 2)
@@ -936,6 +950,7 @@ def chat(request: Request, req: ChatRequest):
             translated_from=resolved_translated_from,
             original_query=resolved_original_query,
             retrieval_query=resolved_retrieval_query,
+            reranker_active=reranker_active_flag,
             debug=debug if SHOW_DEBUG else None,
         )
 
@@ -1085,7 +1100,7 @@ def chat(request: Request, req: ChatRequest):
     keyword_scored.sort(reverse=True, key=lambda x: x[0])
     best_keyword_score = float(keyword_scored[0][0]) if keyword_scored else 0.0
 
-    scored = blended_search(retrieval_query, chunks, keyword_scored, top_k=max(SEMANTIC_CANDIDATE_POOL, TOP_K * 8))
+    scored = blended_search(retrieval_query, chunks, keyword_scored, top_k=INITIAL_RETRIEVAL_TOP_K)
     scored.sort(reverse=True, key=lambda x: x[0])
 
     if not scored:
@@ -1126,19 +1141,57 @@ def chat(request: Request, req: ChatRequest):
                 debug=debug_info,
             )
 
+    initial_selected_scored = select_top_sources(
+        thresholded_scored,
+        q,
+        top_k=INITIAL_RETRIEVAL_TOP_K,
+    )
+    chunk_by_id = {chunk["chunk_id"]: chunk for _, chunk in initial_selected_scored}
+    rerank_input = [
+        (chunk["doc_id"], chunk["chunk_id"], chunk["text"], float(score))
+        for score, chunk in initial_selected_scored
+    ]
+    reranked_candidates = rerank(retrieval_query, rerank_input, top_k=TOP_K)
+    reranker_used = reranker_active()
+    selected_scored: List[Tuple[float, dict]] = []
+    selected_seen = set()
+    for doc_id, chunk_id, _text, score in reranked_candidates:
+        if chunk_id in selected_seen:
+            continue
+        chunk = chunk_by_id.get(chunk_id)
+        if not chunk:
+            continue
+        if chunk.get("doc_id") != doc_id:
+            continue
+        selected_scored.append((float(score), chunk))
+        selected_seen.add(chunk_id)
+
+    if not selected_scored:
+        selected_scored = initial_selected_scored[:TOP_K]
+
+    selected_scores_only = [float(score) for score, _ in selected_scored]
+    selected_max_score = max(selected_scores_only) if selected_scores_only else 0.0
+    selected_min_score = min(selected_scores_only) if selected_scores_only else 0.0
+    selected_score_range = selected_max_score - selected_min_score
+
+    def normalize_selected_score(score: float) -> float:
+        if selected_score_range > 0.0:
+            return (float(score) - selected_min_score) / selected_score_range
+        return 1.0 if selected_max_score > 0.0 else 0.0
+
     top_conflict_candidates = [
         {
             "doc_id": chunk["doc_id"],
             "chunk_id": chunk["chunk_id"],
             "text": chunk["text"],
-            "score": (float(s) / max_score) if max_score else 0.0,
+            "score": normalize_selected_score(float(s)),
         }
-        for s, chunk in scored[:16]
+        for s, chunk in selected_scored
     ]
 
     conflict = check_for_conflicts(top_conflict_candidates, question=q)
     if conflict:
-        text_by_source = {(chunk["doc_id"], chunk["chunk_id"]): chunk["text"] for _, chunk in scored}
+        text_by_source = {(chunk["doc_id"], chunk["chunk_id"]): chunk["text"] for chunk in chunks}
         conflict_citations: List[Citation] = []
         for src in conflict.get("sources", []):
             src_key = (src["doc_id"], src["chunk_id"])
@@ -1157,10 +1210,10 @@ def chat(request: Request, req: ChatRequest):
             confidence="low",
             failure_bucket="conflict_in_sources",
             conflict_details=conflict,
+            reranker_active_flag=reranker_used,
             debug=debug_info,
         )
 
-    selected_scored = select_top_sources(thresholded_scored, q, top_k=TOP_K)
     selected_search_blob = " ".join(chunk["search_text"] for _, chunk in selected_scored)
 
     if best_keyword_score <= 2.0 and best_score < 0.99:
@@ -1170,6 +1223,7 @@ def chat(request: Request, req: ChatRequest):
             confidence="low",
             failure_bucket="not_in_sources",
             suggestions=suggestions,
+            reranker_active_flag=reranker_used,
             debug=debug_info,
         )
 
@@ -1181,6 +1235,7 @@ def chat(request: Request, req: ChatRequest):
             confidence="low",
             failure_bucket="not_in_sources",
             suggestions=suggestions,
+            reranker_active_flag=reranker_used,
             debug=debug_info,
         )
 
@@ -1206,6 +1261,7 @@ def chat(request: Request, req: ChatRequest):
             confidence="low",
             failure_bucket="not_in_sources",
             suggestions=suggestions,
+            reranker_active_flag=reranker_used,
             debug=debug_info,
         )
 
@@ -1223,6 +1279,7 @@ def chat(request: Request, req: ChatRequest):
             confidence="low",
             failure_bucket="not_in_sources",
             suggestions=suggestions,
+            reranker_active_flag=reranker_used,
             debug=debug_info,
         )
 
@@ -1233,7 +1290,7 @@ def chat(request: Request, req: ChatRequest):
     ]
     top_sources_with_scores = [
         (
-            (float(s) / max_score) if max_score else 0.0,
+            normalize_selected_score(float(s)),
             chunk["doc_id"],
             chunk["chunk_id"],
             chunk["text"],
@@ -1267,6 +1324,7 @@ def chat(request: Request, req: ChatRequest):
                 citations=[],
                 confidence="low",
                 failure_bucket="retrieval_failed",
+                reranker_active_flag=reranker_used,
                 debug=debug_info,
             )
         try:
@@ -1278,6 +1336,7 @@ def chat(request: Request, req: ChatRequest):
                     confidence="low",
                     failure_bucket="not_in_sources",
                     suggestions=suggestions,
+                    reranker_active_flag=reranker_used,
                     debug=debug_info,
                 )
             # We still return our citations (grounded in KB chunks)
@@ -1292,6 +1351,7 @@ def chat(request: Request, req: ChatRequest):
         citations=citations,
         confidence=confidence,
         failure_bucket="none",
+        reranker_active_flag=reranker_used,
         debug=debug_info,
     )
 

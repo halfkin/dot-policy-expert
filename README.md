@@ -38,13 +38,14 @@ User question
   → Ravelin (4-layer prompt injection defense)
   → Query Reformulation (LLM mode: rewrite vague inputs)
   → Follow-up Context Resolution (merge with prior turn if needed)
-  → Blended Retrieval (keyword + semantic embedding, top-k with threshold)
+  → Blended Retrieval (keyword + semantic embedding, top-20 candidates)
+  → Cross-Encoder Re-ranking (re-scores candidates by query-chunk relevance, top-3)
   → Conflict Detection (numeric fact extraction across chunks)
   → Answer Generation (LLM synthesis or offline template)
   → Response: answer + citations + confidence + failure bucket
 ```
 
-**Retrieval:** Blended keyword + semantic embedding scoring (sentence-transformers, all-MiniLM-L6-v2). Query reformulation rewrites vague inputs into retrieval-friendly queries without altering the original question for answer generation.
+**Retrieval:** Blended keyword + semantic embedding scoring (sentence-transformers, all-MiniLM-L6-v2) followed by cross-encoder re-ranking (cross-encoder/ms-marco-MiniLM-L-6-v2). Query reformulation rewrites vague inputs into retrieval-friendly queries without altering the original question for answer generation.
 
 **Security (Ravelin):** 4-layer defense pipeline. Layer 0: input length and entropy checks. Layer 1: HTML sanitization. Layer 2: regex pattern matching. Layer 3: dual-classifier consensus — both Lakera Guard and an OpenRouter classifier must agree before blocking. This eliminated false positives on legitimate questions.
 
@@ -138,7 +139,7 @@ Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
 ## Tech Stack
 
-Python 3.11, FastAPI, sentence-transformers (all-MiniLM-L6-v2), OpenRouter (GPT-4o-mini), Lakera Guard, vanilla HTML/CSS/JS frontend, Docker + Caddy.
+Python 3.11, FastAPI, sentence-transformers (all-MiniLM-L6-v2, cross-encoder/ms-marco-MiniLM-L-6-v2), OpenRouter (GPT-4o-mini), Lakera Guard, vanilla HTML/CSS/JS frontend, Docker + Caddy.
 
 ## Documentation
 

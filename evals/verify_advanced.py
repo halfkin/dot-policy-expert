@@ -214,14 +214,32 @@ def build_trace(app_module, question_text: str, response: dict) -> dict:
         retrieval_query,
         chunks,
         keyword_scored,
-        top_k=max(app_module.SEMANTIC_CANDIDATE_POOL, app_module.TOP_K * 8),
+        top_k=app_module.INITIAL_RETRIEVAL_TOP_K,
     )
     blended.sort(reverse=True, key=lambda x: x[0])
 
     best = float(blended[0][0]) if blended else 0.0
     threshold = app_module.retrieval_threshold(best)
     thresholded = [(s, c) for s, c in blended if s >= threshold]
-    selected = app_module.select_top_sources(thresholded, question_text, top_k=app_module.TOP_K)
+    initial_selected = app_module.select_top_sources(
+        thresholded,
+        question_text,
+        top_k=app_module.INITIAL_RETRIEVAL_TOP_K,
+    )
+    chunk_by_id = {c["chunk_id"]: c for _, c in initial_selected}
+    rerank_input = [
+        (c["doc_id"], c["chunk_id"], c["text"], float(s))
+        for s, c in initial_selected
+    ]
+    reranked = app_module.rerank(retrieval_query, rerank_input, top_k=app_module.TOP_K)
+    selected = []
+    for doc_id, chunk_id, _text, score in reranked:
+        chunk = chunk_by_id.get(chunk_id)
+        if chunk is None or chunk.get("doc_id") != doc_id:
+            continue
+        selected.append((float(score), chunk))
+    if not selected:
+        selected = initial_selected[: app_module.TOP_K]
 
     retrieved = [
         {"doc_id": c["doc_id"], "chunk_id": c["chunk_id"], "score": round(float(s), 4)}
@@ -283,12 +301,15 @@ def main() -> None:
         "questions_file_sha256": sha256_file(questions_path),
         "retrieval_settings": {
             "top_k": app.TOP_K,
+            "initial_retrieval_top_k": app.INITIAL_RETRIEVAL_TOP_K,
             "threshold": app.MIN_RETRIEVAL_SCORE,
             "embedding_on": bool(app.semantic_retrieval_enabled()),
             "hybrid_weights": {
                 "keyword": app.BLEND_KEYWORD_WEIGHT,
                 "semantic": app.BLEND_SEMANTIC_WEIGHT,
             },
+            "reranker_enabled": bool(app.RERANKER_ENABLED),
+            "reranker_model": app.RERANKER_MODEL,
         },
         "embedding_model": {
             "name": embedding_info.get("model_name"),
