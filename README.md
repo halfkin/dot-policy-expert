@@ -80,6 +80,23 @@ Current benchmark run (79 questions) covers: direct retrieval, cross-document, p
 
 **Delta:** +5.1 points overall, 0-point change in paraphrased, no category regressions.
 
+### Latest Eval Run (LLM Mode, Reranker Enabled)
+
+Source: `evals/results/eval-20260215-235331.json`
+
+| Category | Pass Rate |
+|----------|-----------|
+| Direct retrieval | 93.3% (14/15) |
+| Cross-document | 100% (8/8) |
+| Paraphrased | **85.7% (6/7)** |
+| Adversarial | 100% (9/9) |
+| Not in sources | 100% (7/7) |
+| Multilingual | 100% (4/4) |
+| Edge case | 73.7% (14/19) |
+| Conflict detection | 0.0% (0/7) |
+| Reasoning | 100% (3/3) |
+| **Overall** | **82.3% (65/79)** |
+
 ### What Changed
 
 - Blended retrieval now returns top-20 candidates first.
@@ -100,7 +117,8 @@ Every eval run classifies failures by root cause — retrieval failures (wrong c
 | Phase 5 | 60% | Synonym expansion, heading boost |
 | Phase 7 | 70% | Follow-up context, confidence scoring |
 | Post-polish | 76% | Embeddings, query reformulation |
-| Final | 83% | System prompt rewrite, conflict gating fixes |
+| Legacy final (75Q set) | 83% | System prompt rewrite, conflict gating fixes |
+| Latest (LLM + reranker, 79Q set) | 82.3% | Cross-encoder reranker + top-20 candidate retrieval |
 
 ### What Broke Along the Way
 
