@@ -10,7 +10,7 @@ Built for a fictional SaaS company (Loomo) as a portfolio project. The same arch
 
 **Answering a policy question with citations:**
 
-![Regular question demo](docs/Dotregualr.gif)
+![Regular question demo](docs/Dotregular.gif)
 
 **Handling a two-step follow-up:**
 
@@ -71,14 +71,13 @@ Every response is validated against five invariants:
 
 Current benchmark run (79 questions) covers: direct retrieval, cross-document, paraphrased, adversarial, conflict detection, edge cases, multilingual, and reasoning.
 
-### LLM-Mode Reranker A/B (2026-02-15)
+### Current Reranker Status (LLM Mode, 2026-02-16)
 
-| Config | Overall Pass Rate | Paraphrased | Avg Runtime |
-|--------|-------------------|-------------|-------------|
-| Baseline (`RERANKER_ENABLED=false`) | 77.2% (61/79) | 85.7% (2/7) | 208.02s/run |
-| Reranker (`RERANKER_ENABLED=true`) | **82.3% (65/79)** | 85.7% (6/7) | 218.84s/run |
+Latest full run with reranker + diversity + broader conflict scan pool:
 
-**Delta:** +5.1 points overall, 0-point change in paraphrased, no category regressions.
+- Overall: **86.1% (68/79)**
+- Conflict detection: **100.0% (7/7)**
+- Paraphrased: **71.4% (5/7)**
 
 ### Latest Eval Run (LLM Mode, Reranker Enabled)
 
