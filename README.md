@@ -75,7 +75,7 @@ Current benchmark run (79 questions) covers: direct retrieval, cross-document, p
 
 | Config | Overall Pass Rate | Paraphrased | Avg Runtime |
 |--------|-------------------|-------------|-------------|
-| Baseline (`RERANKER_ENABLED=false`) | 77.2% (61/79) | 85.7% (6/7) | 208.02s/run |
+| Baseline (`RERANKER_ENABLED=false`) | 77.2% (61/79) | 85.7% (2/7) | 208.02s/run |
 | Reranker (`RERANKER_ENABLED=true`) | **82.3% (65/79)** | 85.7% (6/7) | 218.84s/run |
 
 **Delta:** +5.1 points overall, 0-point change in paraphrased, no category regressions.
