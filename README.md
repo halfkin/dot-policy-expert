@@ -82,26 +82,27 @@ Current benchmark run (79 questions) covers: direct retrieval, cross-document, p
 
 ### Latest Eval Run (LLM Mode, Reranker Enabled)
 
-Source: `evals/results/eval-20260215-235331.json`
+Source: `evals/results/eval-20260216-191539.json`
 
 | Category | Pass Rate |
 |----------|-----------|
 | Direct retrieval | 93.3% (14/15) |
-| Cross-document | 100% (8/8) |
-| Paraphrased | **85.7% (6/7)** |
+| Cross-document | 87.5% (7/8) |
+| Paraphrased | **71.4% (5/7)** |
 | Adversarial | 100% (9/9) |
 | Not in sources | 100% (7/7) |
 | Multilingual | 100% (4/4) |
-| Edge case | 73.7% (14/19) |
-| Conflict detection | 0.0% (0/7) |
+| Edge case | 63.2% (12/19) |
+| Conflict detection | 100.0% (7/7) |
 | Reasoning | 100% (3/3) |
-| **Overall** | **82.3% (65/79)** |
+| **Overall** | **86.1% (68/79)** |
 
 ### What Changed
 
 - Blended retrieval now returns top-20 candidates first.
 - Added cross-encoder second-pass reranking (`cross-encoder/ms-marco-MiniLM-L-6-v2`) down to top-3.
-- Re-ranked top-3 now feed conflict detection and answer generation.
+- Added diversity-aware reranking so top-3 prefers distinct documents when possible.
+- Conflict detection now scans a broader initial retrieval pool (top-16) before answer generation.
 - Fail-open behavior preserved: if reranker is unavailable, retrieval falls back to original ranking.
 - Added reranker metadata (`reranker_active`) and eval fingerprint fields (`reranker_enabled`, `reranker_model`).
 
@@ -118,7 +119,7 @@ Every eval run classifies failures by root cause — retrieval failures (wrong c
 | Phase 7 | 70% | Follow-up context, confidence scoring |
 | Post-polish | 76% | Embeddings, query reformulation |
 | Legacy final (75Q set) | 83% | System prompt rewrite, conflict gating fixes |
-| Latest (LLM + reranker, 79Q set) | 82.3% | Cross-encoder reranker + top-20 candidate retrieval |
+| Latest (LLM + reranker, 79Q set) | 86.1% | Cross-encoder reranker + diversity + broader conflict scan pool |
 
 ### What Broke Along the Way
 

@@ -231,7 +231,11 @@ def build_trace(app_module, question_text: str, response: dict) -> dict:
         (c["doc_id"], c["chunk_id"], c["text"], float(s))
         for s, c in initial_selected
     ]
-    reranked = app_module.rerank(retrieval_query, rerank_input, top_k=app_module.TOP_K)
+    reranked = app_module.rerank_with_diversity(
+        retrieval_query,
+        rerank_input,
+        top_k=app_module.TOP_K,
+    )
     selected = []
     for doc_id, chunk_id, _text, score in reranked:
         chunk = chunk_by_id.get(chunk_id)

@@ -218,8 +218,12 @@ def _should_attempt_conflict_scan(question: str | None) -> bool:
     if ("refund" in q) and (("window" in q) or bool(re.search(r"\bafter\s+\d+", q))):
         # Generic refund-window questions should scan for conflicting windows,
         # while tier-specific refund windows are handled as non-conflicts.
+        after_number = bool(re.search(r"\bafter\s+\d+", q))
+        has_tier = any(tier in q for tier in TIER_TOKENS)
         if _is_tier_specific_refund_window_question(question):
             return False
+        if after_number and has_tier:
+            return True
         if "window" in q:
             return True
         return _is_explicit_conflict_question(question)
@@ -237,7 +241,10 @@ def check_for_conflicts(chunks: list[dict], threshold: float = 0.3, question: st
     if not _should_attempt_conflict_scan(question):
         return None
 
+    q = (question or "").lower()
+    refund_query = "refund" in q
     top = chunks[0]
+    top_text = (top.get("text", "") or "").lower()
 
     # First pass: cross-document conflicts.
     for other in chunks[1:]:
@@ -245,6 +252,10 @@ def check_for_conflicts(chunks: list[dict], threshold: float = 0.3, question: st
             continue
         if other.get("score", 0.0) <= threshold:
             continue
+        if refund_query:
+            other_text = (other.get("text", "") or "").lower()
+            if "refund" not in top_text or "refund" not in other_text:
+                continue
 
         conflict = _detect_pair_conflict(top, other)
         if conflict:
@@ -259,6 +270,10 @@ def check_for_conflicts(chunks: list[dict], threshold: float = 0.3, question: st
             continue
         if other.get("score", 0.0) <= threshold:
             continue
+        if refund_query:
+            other_text = (other.get("text", "") or "").lower()
+            if "refund" not in top_text or "refund" not in other_text:
+                continue
 
         conflict = _detect_pair_conflict(top, other)
         if conflict:

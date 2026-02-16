@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import List, Tuple
+from typing import List, Set, Tuple
 
 try:
     from sentence_transformers import CrossEncoder
@@ -71,6 +71,57 @@ def rerank(query: str, chunks: List[ChunkTuple], top_k: int = 3) -> List[ChunkTu
     for (doc_id, chunk_id, text, _original_score), ce_score in scored[:top_k]:
         reranked.append((doc_id, chunk_id, text, float(ce_score)))
     return reranked
+
+
+def _apply_doc_diversity(scored_chunks: List[ChunkTuple], top_k: int) -> List[ChunkTuple]:
+    if not scored_chunks or top_k <= 0:
+        return []
+
+    remaining = list(scored_chunks)
+    selected: List[ChunkTuple] = [remaining.pop(0)]
+    selected_docs: Set[str] = {selected[0][0]}
+
+    while remaining and len(selected) < top_k:
+        diverse_index = None
+        for idx, candidate in enumerate(remaining):
+            doc_id = candidate[0]
+            if doc_id in selected_docs:
+                continue
+            diverse_index = idx
+            break
+
+        if diverse_index is None:
+            next_candidate = remaining.pop(0)
+        else:
+            next_candidate = remaining.pop(diverse_index)
+        selected.append(next_candidate)
+        selected_docs.add(next_candidate[0])
+
+    return selected[:top_k]
+
+
+def rerank_with_diversity(query: str, chunks: List[ChunkTuple], top_k: int = 3) -> List[ChunkTuple]:
+    """
+    Re-rank with cross-encoder scores, then enforce document diversity in final top-k.
+
+    Selection policy:
+      1) keep the highest-ranked chunk
+      2) for each remaining slot, prefer highest-scoring chunk from a new document
+      3) if no new document remains, fall back to highest remaining score
+    """
+    model = get_reranker()
+    if model is None or not chunks:
+        # Fail-open behavior: preserve original blended ranking when reranker is unavailable.
+        return chunks[:top_k]
+
+    pairs = [(query, chunk[2]) for chunk in chunks]
+    scores = model.predict(pairs)
+    scored = [
+        (doc_id, chunk_id, text, float(ce_score))
+        for (doc_id, chunk_id, text, _original_score), ce_score in zip(chunks, scores)
+    ]
+    scored.sort(key=lambda x: x[3], reverse=True)
+    return _apply_doc_diversity(scored, top_k=top_k)
 
 
 def reranker_active() -> bool:

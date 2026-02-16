@@ -23,7 +23,7 @@ from backend.query_reformulator import reformulate_query
 from backend.reranker import (
     RERANKER_ENABLED,
     RERANKER_MODEL,
-    rerank,
+    rerank_with_diversity,
     reranker_active,
 )
 
@@ -1151,7 +1151,7 @@ def chat(request: Request, req: ChatRequest):
         (chunk["doc_id"], chunk["chunk_id"], chunk["text"], float(score))
         for score, chunk in initial_selected_scored
     ]
-    reranked_candidates = rerank(retrieval_query, rerank_input, top_k=TOP_K)
+    reranked_candidates = rerank_with_diversity(retrieval_query, rerank_input, top_k=TOP_K)
     reranker_used = reranker_active()
     selected_scored: List[Tuple[float, dict]] = []
     selected_seen = set()
@@ -1179,14 +1179,25 @@ def chat(request: Request, req: ChatRequest):
             return (float(score) - selected_min_score) / selected_score_range
         return 1.0 if selected_max_score > 0.0 else 0.0
 
+    conflict_pool = initial_selected_scored[:16]
+    conflict_scores = [float(score) for score, _ in conflict_pool]
+    conflict_max = max(conflict_scores) if conflict_scores else 0.0
+    conflict_min = min(conflict_scores) if conflict_scores else 0.0
+    conflict_range = conflict_max - conflict_min
+
+    def normalize_conflict_score(score: float) -> float:
+        if conflict_range > 0.0:
+            return (float(score) - conflict_min) / conflict_range
+        return 1.0 if conflict_max > 0.0 else 0.0
+
     top_conflict_candidates = [
         {
             "doc_id": chunk["doc_id"],
             "chunk_id": chunk["chunk_id"],
             "text": chunk["text"],
-            "score": normalize_selected_score(float(s)),
+            "score": normalize_conflict_score(float(s)),
         }
-        for s, chunk in selected_scored
+        for s, chunk in conflict_pool
     ]
 
     conflict = check_for_conflicts(top_conflict_candidates, question=q)

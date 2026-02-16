@@ -71,3 +71,36 @@ def test_reranker_preserves_good_rankings(monkeypatch):
 
     assert len(reranked) == 3
     assert reranked[0][1] == "billing.md#invoice-schedule"
+
+
+def test_rerank_with_diversity_prefers_different_documents(monkeypatch):
+    chunks = [
+        ("refunds.md", "refunds.md#one", "Refund policy details one.", 0.91),
+        ("refunds.md", "refunds.md#two", "Refund policy details two.", 0.89),
+        ("accounts.md", "accounts.md#one", "Account deletion timeline.", 0.70),
+        ("sla.md", "sla.md#one", "SLA uptime commitment.", 0.68),
+    ]
+
+    class FakeModel:
+        def predict(self, pairs):
+            assert len(pairs) == 4
+            # Top-2 raw scores belong to refunds.md; diversity step should pick accounts.md next.
+            return [0.99, 0.98, 0.72, 0.40]
+
+    monkeypatch.setattr(reranker_module, "get_reranker", lambda: FakeModel())
+    reranked = reranker_module.rerank_with_diversity(
+        "What is the refund window and account deletion timeline?",
+        chunks,
+        top_k=3,
+    )
+
+    assert len(reranked) == 3
+    assert reranked[0][0] == "refunds.md"
+    assert reranked[1][0] == "accounts.md"
+
+
+def test_rerank_with_diversity_fail_open(monkeypatch):
+    monkeypatch.setattr(reranker_module, "get_reranker", lambda: None)
+    chunks = _sample_chunks()
+    reranked = reranker_module.rerank_with_diversity("refund policy", chunks, top_k=3)
+    assert reranked == chunks[:3]
