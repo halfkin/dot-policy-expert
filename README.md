@@ -67,6 +67,23 @@ Every response is validated against five invariants:
 | **Conflict** | Contradictory sources → flag both, recommend escalation |
 | **Cost** | Normal traffic stays in Tier 0 — no unnecessary LLM classifier calls |
 
+## Ravelin: Prompt Injection Defense
+
+Ravelin is a custom-built, 4-layer input security pipeline designed for this project. It screens every user input before it reaches the retrieval system. Each layer catches a different class of attack, and they run in order from cheapest to most expensive — so normal traffic stays fast and free while suspicious inputs get deeper inspection.
+
+| Layer | Name | What It Does | Cost |
+|-------|------|-------------|------|
+| 0 | Input validation | Rejects empty inputs, oversized inputs (>10K chars), and high-entropy strings (random character spam) | Free — string checks only |
+| 1 | Sanitization | Strips HTML tags, script injections, and encoded payloads that could manipulate downstream processing | Free — regex only |
+| 2 | Pattern matching | Scans for known injection phrases ("ignore previous instructions", "you are now", "system prompt", role-play attempts, and ~30 other patterns) | Free — regex only |
+| 3 | Dual-classifier consensus | Sends suspicious inputs (flagged by Layer 2) to two independent classifiers: Lakera Guard (dedicated injection detection API) and an OpenRouter LLM prompted to classify the input. Both must agree the input is malicious before blocking. | ~$0.003 per suspicious input |
+
+**Why consensus?** Early versions used a single classifier, which produced false positives — legitimate questions like "Can you list the enterprise SLA guarantees?" were blocked because they pattern-matched on command-like structures. Requiring two independent classifiers to agree eliminated false positives while maintaining detection of real attacks.
+
+**Why tiered?** Most inputs (~90%) are normal questions that pass Layers 0-2 instantly at zero cost. Only inputs that trigger Layer 2 patterns are escalated to the expensive Layer 3 classifiers. This keeps per-query cost near zero for normal traffic while maintaining strong defense against adversarial inputs.
+
+**Fail-open design:** If either Layer 3 classifier is unavailable (API down, rate limited, timeout), the input is allowed through rather than blocked. This prevents legitimate users from being locked out during upstream outages. Layers 0-2 still provide baseline protection in this scenario.
+
 ## Eval Results
 
 79-question benchmark covering: direct retrieval, cross-document, paraphrased, adversarial, conflict detection, edge cases, multilingual, and reasoning.
