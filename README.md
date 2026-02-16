@@ -34,7 +34,7 @@ Dot is built around those failure modes — not just the happy path.
 
 ```
 User question
-  → Language Detection (French/Spanish → translate to English in LLM mode; other languages → rejected)
+  → Language Detection (French/Spanish → translate to English; other languages → rejected)
   → Ravelin (4-layer prompt injection defense)
   → Query Reformulation (LLM mode: rewrite vague inputs)
   → Follow-up Context Resolution (merge with prior turn if needed)
@@ -45,15 +45,15 @@ User question
   → Response: answer + citations + confidence + failure bucket
 ```
 
-**Retrieval:** Blended keyword + semantic embedding scoring (sentence-transformers, all-MiniLM-L6-v2) followed by cross-encoder re-ranking (cross-encoder/ms-marco-MiniLM-L-6-v2). Query reformulation rewrites vague inputs into retrieval-friendly queries without altering the original question for answer generation.
+**Retrieval:** Blended keyword + semantic embedding scoring (sentence-transformers, all-MiniLM-L6-v2) followed by cross-encoder re-ranking (ms-marco-MiniLM-L-6-v2) with diversity-aware selection to ensure results span multiple documents. Query reformulation rewrites vague inputs into retrieval-friendly queries without altering the original question for answer generation.
 
 **Security (Ravelin):** 4-layer defense pipeline. Layer 0: input length and entropy checks. Layer 1: HTML sanitization. Layer 2: regex pattern matching. Layer 3: dual-classifier consensus — both Lakera Guard and an OpenRouter classifier must agree before blocking. This eliminated false positives on legitimate questions.
 
-**Conflict Detection:** Extracts numeric facts from retrieved chunks and flags contradictions across documents (e.g., one doc says 30-day data deletion, another says 45 days). Surfaces both sources instead of silently picking one.
+**Conflict Detection:** Extracts numeric facts from retrieved chunks and flags contradictions across documents (e.g., one doc says 30-day data deletion, another says 45 days). Scans a broad retrieval pool (top-16) to maximize coverage. Surfaces both sources instead of silently picking one.
 
 **Grounding:** Every factual answer cites at least one KB chunk. If no chunks are relevant, the response is exactly: "Not in sources." No hedging, no hallucination.
 
-**Multilingual Input:** Accepts questions in French and Spanish, translates them to English via OpenRouter, then runs the standard retrieval and generation pipeline. Responses are returned in English, and the UI indicates when a question was translated. Other languages are rejected gracefully. This supports North American teams (English, French, Spanish) without maintaining separate knowledge bases per language.
+**Multilingual Input:** Accepts questions in French and Spanish, translates to English via OpenRouter, then runs the standard retrieval and generation pipeline. Responses are in English with a UI indicator when translation occurred. Other languages are rejected gracefully. This supports North American teams without maintaining separate knowledge bases per language.
 
 ## Behavioral Contracts
 
@@ -69,56 +69,33 @@ Every response is validated against five invariants:
 
 ## Eval Results
 
-Current benchmark run (79 questions) covers: direct retrieval, cross-document, paraphrased, adversarial, conflict detection, edge cases, multilingual, and reasoning.
-
-### Current Reranker Status (LLM Mode, 2026-02-16)
-
-Latest full run with reranker + diversity + broader conflict scan pool:
-
-- Overall: **86.1% (68/79)**
-- Conflict detection: **100.0% (7/7)**
-- Paraphrased: **71.4% (5/7)**
-
-### Latest Eval Run (LLM Mode, Reranker Enabled)
-
-Source: `evals/results/eval-20260216-191539.json`
+79-question benchmark covering: direct retrieval, cross-document, paraphrased, adversarial, conflict detection, edge cases, multilingual, and reasoning.
 
 | Category | Pass Rate |
 |----------|-----------|
 | Direct retrieval | 93.3% (14/15) |
 | Cross-document | 87.5% (7/8) |
-| Paraphrased | **71.4% (5/7)** |
 | Adversarial | 100% (9/9) |
 | Not in sources | 100% (7/7) |
 | Multilingual | 100% (4/4) |
-| Edge case | 63.2% (12/19) |
-| Conflict detection | 100.0% (7/7) |
+| Conflict detection | 100% (7/7) |
 | Reasoning | 100% (3/3) |
+| Paraphrased | 71.4% (5/7) |
+| Edge case | 63.2% (12/19) |
 | **Overall** | **86.1% (68/79)** |
 
-### What Changed
+Every eval run classifies failures by root cause — retrieval failures (wrong chunk found) vs generation failures (right chunk, bad answer). The fix is different for each: retrieval failures need better search, generation failures need better prompting.
 
-- Blended retrieval now returns top-20 candidates first.
-- Added cross-encoder second-pass reranking (`cross-encoder/ms-marco-MiniLM-L-6-v2`) down to top-3.
-- Added diversity-aware reranking so top-3 prefers distinct documents when possible.
-- Conflict detection now scans a broader initial retrieval pool (top-16) before answer generation.
-- Fail-open behavior preserved: if reranker is unavailable, retrieval falls back to original ranking.
-- Added reranker metadata (`reranker_active`) and eval fingerprint fields (`reranker_enabled`, `reranker_model`).
-
-Every eval run classifies failures by root cause — retrieval failures (wrong chunk found) vs generation failures (right chunk, bad answer). This matters because the fix is different: retrieval failures need better search, generation failures need better prompting.
-
-**LLM Judge:** Optional pass used for qualitative scoring.
-
-### How It Got Here
+### Eval Progression
 
 | Phase | Pass Rate | What Changed |
 |-------|-----------|------------|
-| Baseline | 52% | First eval harness |
+| Baseline | 52% | First eval harness, 50 questions |
 | Phase 5 | 60% | Synonym expansion, heading boost |
 | Phase 7 | 70% | Follow-up context, confidence scoring |
-| Post-polish | 76% | Embeddings, query reformulation |
-| Legacy final (75Q set) | 83% | System prompt rewrite, conflict gating fixes |
-| Latest (LLM + reranker, 79Q set) | 86.1% | Cross-encoder reranker + diversity + broader conflict scan pool |
+| Post-polish | 76% | Semantic embeddings, query reformulation |
+| System prompt rewrite | 83% | Synthesis-first prompting, conflict gating fixes (75 questions) |
+| Cross-encoder + multilingual | 86% | Re-ranking, diversity selection, broader conflict scan, +4 multilingual questions |
 
 ### What Broke Along the Way
 
@@ -130,7 +107,7 @@ Every eval run classifies failures by root cause — retrieval failures (wrong c
 | Conflict detection | Values surfaced but not flagged | Explicit conflict cue detection |
 | Blend weights | Summed to 1.3 instead of 1.0 | Env vars with startup validation |
 
-Every eval run is fingerprinted (commit hash, mode, KB hash, thresholds, blend weights) so results are reproducible.
+Every eval run is fingerprinted (commit hash, mode, KB hash, thresholds, blend weights, reranker model) so results are reproducible.
 
 ## Security
 
