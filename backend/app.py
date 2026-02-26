@@ -265,8 +265,10 @@ def check_language(text: str) -> Optional[str]:
             r"\b(hola|gracias|reembolso|politica|política|cuenta|factura)\b", lowered
         ):
             return "es"
-        if re.search(r"\b(bonjour|merci|remboursement|politique|facturation)\b", lowered):
+        if re.search(r"\b(bonjour|merci|remboursement|politique|facturation|est-ce|quelle|rgpd|conforme|combien|quels?|cette|nous|vous|notre|votre)\b", lowered):
             return "fr"
+        if re.search(r"\b(bitte|danke|rückerstattung|richtlinie|vertrag|kündigung|zahlung|wie|warum|welche|unser|dieser)\b", lowered):
+            return "de"
         if re.search(r"[\u4e00-\u9fff]", sample):
             return "zh"
         if re.search(r"[\uac00-\ud7af]", sample):
