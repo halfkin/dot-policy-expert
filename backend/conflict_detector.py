@@ -53,6 +53,15 @@ WORD_NUMBERS = {
 TIER_TOKENS = {"standard", "pro", "business", "enterprise"}
 
 
+def _chunk_tier(chunk: dict) -> str | None:
+    """Extract plan tier from chunk heading/title metadata."""
+    text = f"{chunk.get('heading', '')} {chunk.get('doc_title', '')}".lower()
+    for tier in TIER_TOKENS:
+        if re.search(rf"\b{tier}\b", text):
+            return tier
+    return None
+
+
 @dataclass
 class Fact:
     value: str
@@ -87,7 +96,7 @@ def _normalize_fact(raw: str) -> str:
     return value
 
 
-def _window_context_tokens(text: str, start: int, end: int, radius: int = 70) -> set[str]:
+def _window_context_tokens(text: str, start: int, end: int, radius: int = 100) -> set[str]:
     left = max(0, start - radius)
     right = min(len(text), end + radius)
     snippet = text[left:right].lower()
@@ -95,7 +104,7 @@ def _window_context_tokens(text: str, start: int, end: int, radius: int = 70) ->
     return {t for t in tokens if len(t) > 2 and t not in CONTEXT_STOPWORDS}
 
 
-def _extract_fact_objects(text: str) -> dict[str, list[Fact]]:
+def _extract_fact_objects(text: str, chunk_tier: str | None = None) -> dict[str, list[Fact]]:
     source = text or ""
     lower = source.lower()
     patterns = [
@@ -109,16 +118,7 @@ def _extract_fact_objects(text: str) -> dict[str, list[Fact]]:
         for match in re.finditer(pattern, lower):
             normalized = _normalize_fact(match.group(0))
             ctx = _window_context_tokens(source, match.start(), match.end())
-            tier_window = lower[max(0, match.start() - 50):min(len(lower), match.end() + 50)]
-            detected_tier = None
-            for t in TIER_TOKENS:
-                if t in tier_window:
-                    if t == "business" and re.search(r"business\s+days?", tier_window):
-                        if not re.search(r"business\s+plan", tier_window):
-                            continue
-                    detected_tier = t
-                    break
-            out[kind].append(Fact(value=normalized, kind=kind, context=ctx, tier=detected_tier))
+            out[kind].append(Fact(value=normalized, kind=kind, context=ctx, tier=chunk_tier))
     return out
 
 
@@ -156,8 +156,10 @@ def _has_contextual_conflict(left: list[Fact], right: list[Fact]) -> bool:
 
 
 def _detect_pair_conflict(chunk_a: dict, chunk_b: dict) -> Optional[dict]:
-    facts_a = _extract_fact_objects(chunk_a.get("text", ""))
-    facts_b = _extract_fact_objects(chunk_b.get("text", ""))
+    tier_a = _chunk_tier(chunk_a)
+    tier_b = _chunk_tier(chunk_b)
+    facts_a = _extract_fact_objects(chunk_a.get("text", ""), chunk_tier=tier_a)
+    facts_b = _extract_fact_objects(chunk_b.get("text", ""), chunk_tier=tier_b)
 
     a_id = f"{chunk_a.get('doc_id', '?')}#{chunk_a.get('chunk_id', '?')}"
     b_id = f"{chunk_b.get('doc_id', '?')}#{chunk_b.get('chunk_id', '?')}"
@@ -205,7 +207,14 @@ def _detect_pair_conflict(chunk_a: dict, chunk_b: dict) -> Optional[dict]:
 
 def _looks_multi_part_question(question: str | None) -> bool:
     q = (question or "").lower()
-    return (" and " in q) or ("; " in q) or (" also " in q)
+    if "; " in q or " also " in q:
+        return True
+    if " and " not in q:
+        return False
+    parts = q.split(" and ")
+    question_words = {"what", "how", "when", "where", "why", "which", "can", "do", "does", "is", "are", "will"}
+    clause_count = sum(1 for p in parts if p.strip() and p.strip().split()[0] in question_words)
+    return clause_count >= 2
 
 
 def _is_explicit_conflict_question(question: str | None) -> bool:
@@ -231,29 +240,8 @@ def _is_explicit_conflict_question(question: str | None) -> bool:
     return False
 
 
-def _is_tier_specific_refund_window_question(question: str | None) -> bool:
-    q = (question or "").lower()
-    if "refund" not in q or "window" not in q:
-        return False
-    has_tier = any(tier in q for tier in TIER_TOKENS)
-    has_after_number = bool(re.search(r"\bafter\s+\d+", q))
-    return has_tier and not has_after_number
-
-
-def _should_attempt_conflict_scan(question: str | None) -> bool:
-    if _is_tier_specific_refund_window_question(question):
-        return False
-    return True
-
-
 def check_for_conflicts(chunks: list[dict], threshold: float = 0.3, question: str | None = None) -> Optional[dict]:
     if len(chunks) < 2:
-        return None
-
-    if _is_tier_specific_refund_window_question(question):
-        return None
-
-    if not _should_attempt_conflict_scan(question):
         return None
 
     q = (question or "").lower()

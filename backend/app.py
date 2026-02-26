@@ -1109,6 +1109,8 @@ def chat(request: Request, req: ChatRequest):
             "doc_id": chunk["doc_id"],
             "chunk_id": chunk["chunk_id"],
             "text": chunk["text"],
+            "heading": chunk.get("heading", ""),
+            "doc_title": chunk.get("doc_title", ""),
             "score": normalize_conflict_score(float(s)),
         }
         for s, chunk in conflict_pool
