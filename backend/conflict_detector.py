@@ -35,12 +35,6 @@ CONTEXT_STOPWORDS = {
     "employee",
     "employees",
     "policy",
-    "plan",
-    "plans",
-    "account",
-    "accounts",
-    "tier",
-    "tiers",
 }
 
 DURATION_UNITS = "days?|hours?|minutes?|weeks?|months?|years?"
@@ -64,6 +58,7 @@ class Fact:
     value: str
     kind: str
     context: set[str]
+    tier: str | None = None
 
 
 def extract_numeric_facts(text: str) -> set[str]:
@@ -114,7 +109,16 @@ def _extract_fact_objects(text: str) -> dict[str, list[Fact]]:
         for match in re.finditer(pattern, lower):
             normalized = _normalize_fact(match.group(0))
             ctx = _window_context_tokens(source, match.start(), match.end())
-            out[kind].append(Fact(value=normalized, kind=kind, context=ctx))
+            tier_window = lower[max(0, match.start() - 50):min(len(lower), match.end() + 50)]
+            detected_tier = None
+            for t in TIER_TOKENS:
+                if t in tier_window:
+                    if t == "business" and re.search(r"business\s+days?", tier_window):
+                        if not re.search(r"business\s+plan", tier_window):
+                            continue
+                    detected_tier = t
+                    break
+            out[kind].append(Fact(value=normalized, kind=kind, context=ctx, tier=detected_tier))
     return out
 
 
@@ -133,6 +137,8 @@ def _has_contextual_conflict(left: list[Fact], right: list[Fact]) -> bool:
     for lf in left:
         for rf in right:
             if lf.value == rf.value:
+                continue
+            if lf.tier and rf.tier and lf.tier != rf.tier:
                 continue
             overlap = lf.context & rf.context
             if not overlap:
