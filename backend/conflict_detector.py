@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Optional
 
+import requests
+
 logger = logging.getLogger(__name__)
+
+_OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+_OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini").strip()
+_USE_LLM = os.getenv("USE_LLM", "0") == "1"
 
 CONTEXT_STOPWORDS = {
     "the",
@@ -68,6 +77,7 @@ class Fact:
     kind: str
     context: set[str]
     tier: str | None = None
+    raw_snippet: str = ""
 
 
 def extract_numeric_facts(text: str) -> set[str]:
@@ -118,12 +128,86 @@ def _extract_fact_objects(text: str, chunk_tier: str | None = None) -> dict[str,
         for match in re.finditer(pattern, lower):
             normalized = _normalize_fact(match.group(0))
             ctx = _window_context_tokens(source, match.start(), match.end())
-            out[kind].append(Fact(value=normalized, kind=kind, context=ctx, tier=chunk_tier))
+            snip_start = max(0, match.start() - 150)
+            snip_end = min(len(source), match.end() + 150)
+            raw_snippet = source[snip_start:snip_end].strip()
+            out[kind].append(Fact(value=normalized, kind=kind, context=ctx, tier=chunk_tier, raw_snippet=raw_snippet))
     return out
 
 
 def _value_set(facts: list[Fact]) -> set[str]:
     return {f.value for f in facts}
+
+
+def _llm_verify_chunk_conflict(text_a: str, text_b: str, question: str) -> bool:
+    """Ask LLM whether two full chunk texts contain contradictory info relevant to the question.
+
+    Called once per query as a final-stage check when regex found numeric disagreements
+    but Jaccard couldn't confirm. Fail-open: returns False on error.
+    """
+    if not _USE_LLM or not _OPENROUTER_API_KEY:
+        return False
+
+    start = time.time()
+    try:
+        resp = requests.post(
+            _OPENROUTER_URL,
+            headers={
+                "Authorization": f"Bearer {_OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": _OPENROUTER_MODEL,
+                "temperature": 0.0,
+                "max_tokens": 5,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You detect data contradictions. Answer \"yes\" ONLY if the SAME "
+                            "specific metric or limit is stated with INCOMPATIBLE values. "
+                            "Answer \"no\" if the values refer to different things. "
+                            "Answer ONLY \"yes\" or \"no\"."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f'User question: "{question}"\n\n'
+                            f"Excerpt 1:\n{text_a[:600]}\n\n"
+                            f"Excerpt 2:\n{text_b[:600]}\n\n"
+                            "Is there a DIRECT CONTRADICTION relevant to the user's question?\n\n"
+                            "A contradiction = the SAME specific fact stated with different values.\n"
+                            "NOT a contradiction:\n"
+                            "- Different plan tiers with different values (Pro vs Enterprise)\n"
+                            "- Different aspects with different numbers "
+                            "(eligibility period vs processing time, response time vs resolution time)\n"
+                            "- Different policies with different durations "
+                            "(suspension period vs data retention vs refund window)\n"
+                            "IS a contradiction:\n"
+                            "- Same guarantee stated as both 99.9% and 99.99% for the same plan\n"
+                            "- Same refund window stated as both 14 days and 30 days for the same tier"
+                        ),
+                    },
+                ],
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        answer = resp.json()["choices"][0]["message"]["content"].strip().lower()
+        latency_ms = int((time.time() - start) * 1000)
+        logger.info(
+            "CONFLICT_LLM_VERIFY question=%r llm_result=%s latency_ms=%d",
+            question[:60], answer, latency_ms,
+        )
+        return answer.startswith("yes")
+    except Exception as exc:
+        latency_ms = int((time.time() - start) * 1000)
+        logger.warning(
+            "CONFLICT_LLM_VERIFY_FAILED error=%s latency_ms=%d",
+            str(exc)[:120], latency_ms,
+        )
+        return False
 
 
 def _has_contextual_conflict(left: list[Fact], right: list[Fact]) -> bool:
@@ -155,7 +239,68 @@ def _has_contextual_conflict(left: list[Fact], right: list[Fact]) -> bool:
     return False
 
 
-def _detect_pair_conflict(chunk_a: dict, chunk_b: dict) -> Optional[dict]:
+def _question_tier(question: str) -> str | None:
+    """Extract plan tier mentioned in the user's question."""
+    q = question.lower()
+    for tier in TIER_TOKENS:
+        if re.search(rf"\b{tier}\b", q):
+            return tier
+    return None
+
+
+def _snippet_tier(snippet: str) -> str | None:
+    """Detect if a fact snippet mentions a specific tier."""
+    lower = snippet.lower()
+    for tier in TIER_TOKENS:
+        if re.search(rf"\b{tier}\b", lower):
+            return tier
+    return None
+
+
+def _pair_has_numeric_disagreement(chunk_a: dict, chunk_b: dict, qtier: str | None = None) -> bool:
+    """Check if two chunks have facts of the same kind with different values and some context overlap.
+
+    When qtier is set, narrows the comparison to facts whose snippet mentions that tier.
+    Also excludes cross-tier comparisons at the snippet level — if one fact's snippet
+    mentions "Enterprise" and another mentions "Standard", they're not comparable.
+    """
+    tier_a = _chunk_tier(chunk_a)
+    tier_b = _chunk_tier(chunk_b)
+    facts_a = _extract_fact_objects(chunk_a.get("text", ""), chunk_tier=tier_a)
+    facts_b = _extract_fact_objects(chunk_b.get("text", ""), chunk_tier=tier_b)
+
+    for kind in ("money", "percent", "duration"):
+        left_facts = facts_a[kind]
+        right_facts = facts_b[kind]
+
+        if qtier:
+            # Exclude facts whose snippet mentions a DIFFERENT tier
+            filtered_a = [f for f in left_facts
+                          if _snippet_tier(f.raw_snippet) in (None, qtier)]
+            filtered_b = [f for f in right_facts
+                          if _snippet_tier(f.raw_snippet) in (None, qtier)]
+            if filtered_a:
+                left_facts = filtered_a
+            if filtered_b:
+                right_facts = filtered_b
+
+        for lf in left_facts:
+            for rf in right_facts:
+                if lf.value == rf.value:
+                    continue
+                if lf.tier and rf.tier and lf.tier != rf.tier:
+                    continue
+                # Snippet-level tier exclusion (catches cross-tier even without qtier)
+                lf_st = _snippet_tier(lf.raw_snippet)
+                rf_st = _snippet_tier(rf.raw_snippet)
+                if lf_st and rf_st and lf_st != rf_st:
+                    continue
+                if len(lf.context & rf.context) >= 2:
+                    return True
+    return False
+
+
+def _detect_pair_conflict(chunk_a: dict, chunk_b: dict, question: str = "") -> Optional[dict]:
     tier_a = _chunk_tier(chunk_a)
     tier_b = _chunk_tier(chunk_b)
     facts_a = _extract_fact_objects(chunk_a.get("text", ""), chunk_tier=tier_a)
@@ -260,7 +405,7 @@ def check_for_conflicts(chunks: list[dict], threshold: float = 0.3, question: st
             if "refund" not in top_text or "refund" not in other_text:
                 continue
 
-        conflict = _detect_pair_conflict(top, other)
+        conflict = _detect_pair_conflict(top, other, question=question or "")
         if conflict:
             return conflict
 
@@ -278,8 +423,47 @@ def check_for_conflicts(chunks: list[dict], threshold: float = 0.3, question: st
             if "refund" not in top_text or "refund" not in other_text:
                 continue
 
-        conflict = _detect_pair_conflict(top, other)
+        conflict = _detect_pair_conflict(top, other, question=question or "")
         if conflict:
             return conflict
+
+    # LLM fallback: regex found numeric disagreements but Jaccard couldn't confirm.
+    # Send full chunk text to LLM once for the best candidate pair.
+    if _USE_LLM and _OPENROUTER_API_KEY and question:
+        qtier = _question_tier(question)
+        for other in chunks[1:]:
+            if other.get("score", 0.0) <= threshold:
+                continue
+            if not _pair_has_numeric_disagreement(top, other, qtier=qtier):
+                continue
+            if _llm_verify_chunk_conflict(
+                top.get("text", ""), other.get("text", ""), question
+            ):
+                # Build conflict result from the pair
+                tier_a = _chunk_tier(top)
+                tier_b = _chunk_tier(other)
+                facts_a = _extract_fact_objects(top.get("text", ""), chunk_tier=tier_a)
+                facts_b = _extract_fact_objects(other.get("text", ""), chunk_tier=tier_b)
+                for kind in ("money", "percent", "duration"):
+                    a_vals = sorted(_value_set(facts_a[kind]))
+                    b_vals = sorted(_value_set(facts_b[kind]))
+                    if a_vals and b_vals and set(a_vals) != set(b_vals):
+                        return {
+                            "conflict": True,
+                            "conflict_type": kind,
+                            "sources": [
+                                {
+                                    "doc_id": top["doc_id"],
+                                    "chunk_id": top["chunk_id"],
+                                    "facts": a_vals,
+                                },
+                                {
+                                    "doc_id": other["doc_id"],
+                                    "chunk_id": other["chunk_id"],
+                                    "facts": b_vals,
+                                },
+                            ],
+                            "message": "I found conflicting information across our documents on this topic. Here are both sources - I'd recommend reaching out to our support team for clarification.",
+                        }
 
     return None

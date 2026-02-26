@@ -1,6 +1,6 @@
 {
   "fingerprint": {
-    "timestamp": "2026-02-26T20:26:53.075291+00:00",
+    "timestamp": "2026-02-26T23:50:03.984579+00:00",
     "kb_files": [
       "acceptable_use.md",
       "accounts.md",
@@ -14,12 +14,12 @@
       "troubleshooting.md"
     ],
     "total_questions": 58,
-    "passed": 52,
-    "failed": 6,
+    "passed": 53,
+    "failed": 5,
     "endpoint": "http://127.0.0.1:8000",
     "eval_file": "eval_suite_loomo.json"
   },
-  "overall_pass_rate_pct": 89.7,
+  "overall_pass_rate_pct": 91.4,
   "category_pass_rates": {
     "adversarial": {
       "passed": 7,
@@ -27,9 +27,9 @@
       "pass_rate_pct": 100.0
     },
     "conflict_detection": {
-      "passed": 0,
+      "passed": 3,
       "total": 5,
-      "pass_rate_pct": 0.0
+      "pass_rate_pct": 60.0
     },
     "cross_document": {
       "passed": 8,
@@ -47,9 +47,9 @@
       "pass_rate_pct": 87.5
     },
     "multilingual": {
-      "passed": 4,
+      "passed": 3,
       "total": 4,
-      "pass_rate_pct": 100.0
+      "pass_rate_pct": 75.0
     },
     "not_in_sources": {
       "passed": 3,
@@ -57,9 +57,9 @@
       "pass_rate_pct": 100.0
     },
     "paraphrased": {
-      "passed": 5,
+      "passed": 4,
       "total": 5,
-      "pass_rate_pct": 100.0
+      "pass_rate_pct": 80.0
     },
     "reasoning": {
       "passed": 3,
@@ -77,12 +77,12 @@
       "expected_failure_bucket": "none",
       "actual_citations": [
         {
-          "doc_id": "accounts.md",
-          "chunk_id": "accounts.md#plan-tiers-and-pricing"
+          "doc_id": "features.md",
+          "chunk_id": "features.md#business-plan-features"
         },
         {
-          "doc_id": "billing.md",
-          "chunk_id": "billing.md#upgrade-billing-treatment"
+          "doc_id": "accounts.md",
+          "chunk_id": "accounts.md#plan-tiers-and-pricing"
         },
         {
           "doc_id": "onboarding.md",
@@ -133,8 +133,8 @@
           "chunk_id": "security.md#incident-response"
         },
         {
-          "doc_id": "privacy.md",
-          "chunk_id": "privacy.md#breach-notification"
+          "doc_id": "billing.md",
+          "chunk_id": "billing.md#account-suspension-for-non-payment"
         }
       ],
       "expected_citations": [],
@@ -153,12 +153,12 @@
           "chunk_id": "accounts.md#transferring-account-ownership"
         },
         {
-          "doc_id": "security.md",
-          "chunk_id": "security.md#audit-logging"
-        },
-        {
           "doc_id": "refunds.md",
           "chunk_id": "refunds.md#cancellation-process"
+        },
+        {
+          "doc_id": "troubleshooting.md",
+          "chunk_id": "troubleshooting.md#account-and-billing-issues"
         }
       ],
       "expected_citations": [],
@@ -201,12 +201,12 @@
           "chunk_id": "billing.md#monthly-invoicing-cycle"
         },
         {
-          "doc_id": "refunds.md",
-          "chunk_id": "refunds.md#cancellation-process"
-        },
-        {
           "doc_id": "sla.md",
           "chunk_id": "sla.md#service-credit-calculation"
+        },
+        {
+          "doc_id": "refunds.md",
+          "chunk_id": "refunds.md#cancellation-process"
         }
       ],
       "expected_citations": [],
@@ -250,11 +250,11 @@
         },
         {
           "doc_id": "features.md",
-          "chunk_id": "features.md#enterprise-plan-features"
+          "chunk_id": "features.md#business-plan-features"
         },
         {
-          "doc_id": "security.md",
-          "chunk_id": "security.md#authentication-and-access-control"
+          "doc_id": "troubleshooting.md",
+          "chunk_id": "troubleshooting.md#cannot-access-enterprise-features"
         }
       ],
       "expected_citations": [],
@@ -325,8 +325,8 @@
           "chunk_id": "troubleshooting.md#cannot-log-in-ssosaml-issues"
         },
         {
-          "doc_id": "security.md",
-          "chunk_id": "security.md#infrastructure-security"
+          "doc_id": "accounts.md",
+          "chunk_id": "accounts.md#account-ownership-and-admin-roles"
         }
       ],
       "expected_citations": [],
@@ -349,8 +349,8 @@
           "chunk_id": "refunds.md#enterprise-satisfaction-guarantee-window"
         },
         {
-          "doc_id": "accounts.md",
-          "chunk_id": "accounts.md#plan-tiers-and-pricing"
+          "doc_id": "billing.md",
+          "chunk_id": "billing.md#net-payment-terms"
         }
       ],
       "expected_citations": [],
@@ -369,12 +369,12 @@
           "chunk_id": "billing.md#account-suspension-for-non-payment"
         },
         {
-          "doc_id": "privacy.md",
-          "chunk_id": "privacy.md#account-deletion-and-data-scrubbing"
-        },
-        {
           "doc_id": "accounts.md",
           "chunk_id": "accounts.md#account-reactivation"
+        },
+        {
+          "doc_id": "refunds.md",
+          "chunk_id": "refunds.md#cancellation-process"
         }
       ],
       "expected_citations": [],
@@ -393,12 +393,12 @@
           "chunk_id": "privacy.md#data-retention-by-plan"
         },
         {
-          "doc_id": "acceptable_use.md",
-          "chunk_id": "acceptable_use.md#reporting-violations"
+          "doc_id": "accounts.md",
+          "chunk_id": "accounts.md#account-reactivation"
         },
         {
-          "doc_id": "onboarding.md",
-          "chunk_id": "onboarding.md#business-plan-onboarding"
+          "doc_id": "refunds.md",
+          "chunk_id": "refunds.md#cancellation-process"
         }
       ],
       "expected_citations": [],
@@ -421,8 +421,8 @@
           "chunk_id": "accounts.md#ownership-transfer-when-owner-is-unreachable"
         },
         {
-          "doc_id": "refunds.md",
-          "chunk_id": "refunds.md#cancellation-process"
+          "doc_id": "security.md",
+          "chunk_id": "security.md#compliance"
         }
       ],
       "expected_citations": [],
@@ -610,11 +610,11 @@
         },
         {
           "doc_id": "privacy.md",
-          "chunk_id": "privacy.md#third-party-subprocessors"
+          "chunk_id": "privacy.md#breach-notification"
         },
         {
-          "doc_id": "features.md",
-          "chunk_id": "features.md#platform-overview"
+          "doc_id": "security.md",
+          "chunk_id": "security.md#incident-response"
         }
       ],
       "expected_citations": [],
@@ -630,15 +630,15 @@
       "actual_citations": [
         {
           "doc_id": "refunds.md",
-          "chunk_id": "refunds.md#refund-processing-time"
+          "chunk_id": "refunds.md#enterprise-satisfaction-guarantee-window"
         },
         {
           "doc_id": "billing.md",
           "chunk_id": "billing.md#late-payment-policy"
         },
         {
-          "doc_id": "sla.md",
-          "chunk_id": "sla.md#how-to-file-a-service-credit-claim"
+          "doc_id": "accounts.md",
+          "chunk_id": "accounts.md#ownership-transfer-when-owner-is-unreachable"
         }
       ],
       "expected_citations": [],
@@ -648,25 +648,21 @@
       "id": "PP-02",
       "question": "My boss is locked out, how do we fix this?",
       "category": "paraphrased",
-      "pass": true,
-      "actual_failure_bucket": "none",
+      "pass": false,
+      "actual_failure_bucket": "conflict_in_sources",
       "expected_failure_bucket": "none",
       "actual_citations": [
         {
-          "doc_id": "troubleshooting.md",
-          "chunk_id": "troubleshooting.md#cannot-log-in-account-locked"
+          "doc_id": "accounts.md",
+          "chunk_id": "accounts.md#account-deletion-process"
         },
         {
-          "doc_id": "security.md",
-          "chunk_id": "security.md#authentication-and-access-control"
-        },
-        {
-          "doc_id": "billing.md",
-          "chunk_id": "billing.md#account-suspension-for-non-payment"
+          "doc_id": "accounts.md",
+          "chunk_id": "accounts.md#account-reactivation"
         }
       ],
       "expected_citations": [],
-      "notes": "ok"
+      "notes": "failure_bucket='conflict_in_sources' (expected 'none')"
     },
     {
       "id": "PP-03",
@@ -709,8 +705,8 @@
           "chunk_id": "onboarding.md#support-channels-by-plan"
         },
         {
-          "doc_id": "features.md",
-          "chunk_id": "features.md#enterprise-plan-features"
+          "doc_id": "sla.md",
+          "chunk_id": "sla.md#promotional-uptime-guarantee"
         }
       ],
       "expected_citations": [],
@@ -729,12 +725,12 @@
           "chunk_id": "sla.md#sla-for-api-availability"
         },
         {
-          "doc_id": "refunds.md",
-          "chunk_id": "refunds.md#enterprise-satisfaction-guarantee-window"
+          "doc_id": "privacy.md",
+          "chunk_id": "privacy.md#data-processing-agreement"
         },
         {
-          "doc_id": "onboarding.md",
-          "chunk_id": "onboarding.md#support-channels-by-plan"
+          "doc_id": "refunds.md",
+          "chunk_id": "refunds.md#enterprise-satisfaction-guarantee-window"
         }
       ],
       "expected_citations": [],
@@ -805,15 +801,15 @@
       "actual_citations": [
         {
           "doc_id": "refunds.md",
-          "chunk_id": "refunds.md#refund-approval-thresholds"
+          "chunk_id": "refunds.md#standard-refund-eligibility-window"
+        },
+        {
+          "doc_id": "billing.md",
+          "chunk_id": "billing.md#accepted-payment-methods"
         },
         {
           "doc_id": "sla.md",
           "chunk_id": "sla.md#how-to-file-a-service-credit-claim"
-        },
-        {
-          "doc_id": "onboarding.md",
-          "chunk_id": "onboarding.md#support-priority-levels"
         }
       ],
       "expected_citations": [],
@@ -834,8 +830,8 @@
       "id": "CF-01",
       "question": "What uptime guarantee does the Pro plan have?",
       "category": "conflict_detection",
-      "pass": false,
-      "actual_failure_bucket": "none",
+      "pass": true,
+      "actual_failure_bucket": "conflict_in_sources",
       "expected_failure_bucket": "conflict_in_sources",
       "actual_citations": [
         {
@@ -843,16 +839,12 @@
           "chunk_id": "sla.md#uptime-guarantee-by-plan"
         },
         {
-          "doc_id": "accounts.md",
-          "chunk_id": "accounts.md#plan-tiers-and-pricing"
-        },
-        {
-          "doc_id": "refunds.md",
-          "chunk_id": "refunds.md#enterprise-satisfaction-guarantee-window"
+          "doc_id": "sla.md",
+          "chunk_id": "sla.md#promotional-uptime-guarantee"
         }
       ],
       "expected_citations": [],
-      "notes": "expected failure_bucket=conflict_in_sources, got='none'"
+      "notes": "ok"
     },
     {
       "id": "CF-02",
@@ -906,8 +898,8 @@
       "id": "CF-04",
       "question": "How long until my data is completely deleted after I close my account?",
       "category": "conflict_detection",
-      "pass": false,
-      "actual_failure_bucket": "none",
+      "pass": true,
+      "actual_failure_bucket": "conflict_in_sources",
       "expected_failure_bucket": "conflict_in_sources",
       "actual_citations": [
         {
@@ -915,23 +907,19 @@
           "chunk_id": "privacy.md#data-retention-by-plan"
         },
         {
-          "doc_id": "refunds.md",
-          "chunk_id": "refunds.md#cancellation-process"
-        },
-        {
           "doc_id": "accounts.md",
           "chunk_id": "accounts.md#account-deletion-process"
         }
       ],
       "expected_citations": [],
-      "notes": "expected failure_bucket=conflict_in_sources, got='none'"
+      "notes": "ok"
     },
     {
       "id": "CF-05",
       "question": "What are the uptime guarantees across all your plans?",
       "category": "conflict_detection",
-      "pass": false,
-      "actual_failure_bucket": "none",
+      "pass": true,
+      "actual_failure_bucket": "conflict_in_sources",
       "expected_failure_bucket": "conflict_in_sources",
       "actual_citations": [
         {
@@ -939,16 +927,12 @@
           "chunk_id": "sla.md#uptime-guarantee-by-plan"
         },
         {
-          "doc_id": "refunds.md",
-          "chunk_id": "refunds.md#enterprise-satisfaction-guarantee-window"
-        },
-        {
-          "doc_id": "onboarding.md",
-          "chunk_id": "onboarding.md#support-channels-by-plan"
+          "doc_id": "sla.md",
+          "chunk_id": "sla.md#promotional-uptime-guarantee"
         }
       ],
       "expected_citations": [],
-      "notes": "expected failure_bucket=conflict_in_sources, got='none'"
+      "notes": "ok"
     },
     {
       "id": "EC-01",
@@ -963,12 +947,12 @@
           "chunk_id": "refunds.md#refund-approval-thresholds"
         },
         {
-          "doc_id": "troubleshooting.md",
-          "chunk_id": "troubleshooting.md#account-and-billing-issues"
-        },
-        {
           "doc_id": "onboarding.md",
           "chunk_id": "onboarding.md#dedicated-customer-success-manager"
+        },
+        {
+          "doc_id": "billing.md",
+          "chunk_id": "billing.md#late-payment-policy"
         }
       ],
       "expected_citations": [],
@@ -987,12 +971,12 @@
           "chunk_id": "refunds.md#refund-approval-thresholds"
         },
         {
-          "doc_id": "billing.md",
-          "chunk_id": "billing.md#billing-currency"
+          "doc_id": "accounts.md",
+          "chunk_id": "accounts.md#ownership-transfer-when-owner-is-unreachable"
         },
         {
-          "doc_id": "privacy.md",
-          "chunk_id": "privacy.md#data-processing-agreement"
+          "doc_id": "troubleshooting.md",
+          "chunk_id": "troubleshooting.md#account-and-billing-issues"
         }
       ],
       "expected_citations": [],
@@ -1026,8 +1010,8 @@
           "chunk_id": "billing.md#late-payment-policy"
         },
         {
-          "doc_id": "onboarding.md",
-          "chunk_id": "onboarding.md#business-plan-onboarding"
+          "doc_id": "acceptable_use.md",
+          "chunk_id": "acceptable_use.md#enforcement-actions-for-violations"
         }
       ],
       "expected_citations": [],
@@ -1047,11 +1031,11 @@
         },
         {
           "doc_id": "refunds.md",
-          "chunk_id": "refunds.md#cancellation-process"
+          "chunk_id": "refunds.md#no-prorated-refunds-for-mid-cycle-cancellations"
         },
         {
-          "doc_id": "billing.md",
-          "chunk_id": "billing.md#late-payment-policy"
+          "doc_id": "accounts.md",
+          "chunk_id": "accounts.md#plan-downgrades"
         }
       ],
       "expected_citations": [],
@@ -1067,11 +1051,11 @@
       "actual_citations": [
         {
           "doc_id": "accounts.md",
-          "chunk_id": "accounts.md#account-reactivation"
+          "chunk_id": "accounts.md#account-deletion-process"
         },
         {
-          "doc_id": "privacy.md",
-          "chunk_id": "privacy.md#account-deletion-and-data-scrubbing"
+          "doc_id": "accounts.md",
+          "chunk_id": "accounts.md#account-reactivation"
         }
       ],
       "expected_citations": [],
@@ -1111,15 +1095,15 @@
       "actual_citations": [
         {
           "doc_id": "sla.md",
-          "chunk_id": "sla.md#service-credit-calculation"
+          "chunk_id": "sla.md#how-to-file-a-service-credit-claim"
         },
         {
           "doc_id": "accounts.md",
           "chunk_id": "accounts.md#plan-downgrades"
         },
         {
-          "doc_id": "privacy.md",
-          "chunk_id": "privacy.md#data-processing-agreement"
+          "doc_id": "billing.md",
+          "chunk_id": "billing.md#downgrade-billing-treatment"
         }
       ],
       "expected_citations": [],
@@ -1129,8 +1113,8 @@
       "id": "ML-01",
       "question": "Quelle est la politique de remboursement?",
       "category": "multilingual",
-      "pass": true,
-      "actual_failure_bucket": "none",
+      "pass": false,
+      "actual_failure_bucket": "conflict_in_sources",
       "expected_failure_bucket": "none",
       "actual_citations": [
         {
@@ -1138,16 +1122,12 @@
           "chunk_id": "refunds.md#standard-refund-eligibility-window"
         },
         {
-          "doc_id": "sla.md",
-          "chunk_id": "sla.md#how-to-file-a-service-credit-claim"
-        },
-        {
-          "doc_id": "billing.md",
-          "chunk_id": "billing.md#account-suspension-for-non-payment"
+          "doc_id": "refunds.md",
+          "chunk_id": "refunds.md#automated-refund-processing-cutoff"
         }
       ],
       "expected_citations": [],
-      "notes": "ok"
+      "notes": "failure_bucket='conflict_in_sources' (expected 'none')"
     },
     {
       "id": "ML-02",
@@ -1162,12 +1142,12 @@
           "chunk_id": "accounts.md#plan-tiers-and-pricing"
         },
         {
-          "doc_id": "features.md",
-          "chunk_id": "features.md#business-plan-features"
+          "doc_id": "sla.md",
+          "chunk_id": "sla.md#service-credit-calculation"
         },
         {
-          "doc_id": "onboarding.md",
-          "chunk_id": "onboarding.md#dedicated-customer-success-manager"
+          "doc_id": "features.md",
+          "chunk_id": "features.md#business-plan-features"
         }
       ],
       "expected_citations": [],
@@ -1182,16 +1162,16 @@
       "expected_failure_bucket": "none",
       "actual_citations": [
         {
+          "doc_id": "acceptable_use.md",
+          "chunk_id": "acceptable_use.md#content-and-data-responsibilities"
+        },
+        {
           "doc_id": "security.md",
           "chunk_id": "security.md#compliance"
         },
         {
           "doc_id": "privacy.md",
           "chunk_id": "privacy.md#compliance-certifications"
-        },
-        {
-          "doc_id": "acceptable_use.md",
-          "chunk_id": "acceptable_use.md#content-and-data-responsibilities"
         }
       ],
       "expected_citations": [],
@@ -1221,12 +1201,12 @@
           "chunk_id": "accounts.md#plan-tiers-and-pricing"
         },
         {
-          "doc_id": "billing.md",
-          "chunk_id": "billing.md#tax-handling"
-        },
-        {
           "doc_id": "features.md",
           "chunk_id": "features.md#platform-overview"
+        },
+        {
+          "doc_id": "billing.md",
+          "chunk_id": "billing.md#tax-handling"
         }
       ],
       "expected_citations": [],
@@ -1245,12 +1225,12 @@
           "chunk_id": "onboarding.md#support-channels-by-plan"
         },
         {
-          "doc_id": "features.md",
-          "chunk_id": "features.md#business-plan-features"
+          "doc_id": "accounts.md",
+          "chunk_id": "accounts.md#minimum-seat-requirements"
         },
         {
-          "doc_id": "accounts.md",
-          "chunk_id": "accounts.md#plan-tiers-and-pricing"
+          "doc_id": "features.md",
+          "chunk_id": "features.md#business-plan-features"
         }
       ],
       "expected_citations": [],
@@ -1266,15 +1246,15 @@
       "actual_citations": [
         {
           "doc_id": "onboarding.md",
-          "chunk_id": "onboarding.md#enterprise-plan-onboarding"
+          "chunk_id": "onboarding.md#business-plan-onboarding"
         },
         {
-          "doc_id": "privacy.md",
-          "chunk_id": "privacy.md#third-party-subprocessors"
+          "doc_id": "features.md",
+          "chunk_id": "features.md#platform-overview"
         },
         {
-          "doc_id": "security.md",
-          "chunk_id": "security.md#reporting-security-concerns"
+          "doc_id": "acceptable_use.md",
+          "chunk_id": "acceptable_use.md#shared-login-prohibition"
         }
       ],
       "expected_citations": [],
