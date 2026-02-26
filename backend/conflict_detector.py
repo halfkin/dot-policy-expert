@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 CONTEXT_STOPWORDS = {
     "the",
@@ -132,7 +135,16 @@ def _has_contextual_conflict(left: list[Fact], right: list[Fact]) -> bool:
             if lf.value == rf.value:
                 continue
             overlap = lf.context & rf.context
-            if overlap:
+            if not overlap:
+                continue
+            union = lf.context | rf.context
+            similarity = len(overlap) / len(union) if union else 0.0
+            logger.info(
+                "CONFLICT_SCORE doc_pair=%s|%s kind=%s values=%s|%s jaccard=%.3f overlap=%s",
+                getattr(lf, '_doc_id', '?'), getattr(rf, '_doc_id', '?'),
+                lf.kind, lf.value, rf.value, similarity, overlap,
+            )
+            if similarity >= 0.2:
                 return True
     return False
 
@@ -141,7 +153,27 @@ def _detect_pair_conflict(chunk_a: dict, chunk_b: dict) -> Optional[dict]:
     facts_a = _extract_fact_objects(chunk_a.get("text", ""))
     facts_b = _extract_fact_objects(chunk_b.get("text", ""))
 
+    a_id = f"{chunk_a.get('doc_id', '?')}#{chunk_a.get('chunk_id', '?')}"
+    b_id = f"{chunk_b.get('doc_id', '?')}#{chunk_b.get('chunk_id', '?')}"
+
     for kind in ("money", "percent", "duration"):
+        a_vals = sorted(_value_set(facts_a[kind]))
+        b_vals = sorted(_value_set(facts_b[kind]))
+        if a_vals and b_vals and set(a_vals) != set(b_vals):
+            # Log all Jaccard comparisons for this pair
+            for lf in facts_a[kind]:
+                for rf in facts_b[kind]:
+                    if lf.value == rf.value:
+                        continue
+                    overlap = lf.context & rf.context
+                    if not overlap:
+                        continue
+                    union = lf.context | rf.context
+                    sim = len(overlap) / len(union) if union else 0.0
+                    logger.info(
+                        "CONFLICT_PAIR %s vs %s | kind=%s | %s vs %s | jaccard=%.3f | overlap=%s | a_ctx=%s | b_ctx=%s",
+                        a_id, b_id, kind, lf.value, rf.value, sim, overlap, lf.context, rf.context,
+                    )
         if _has_contextual_conflict(facts_a[kind], facts_b[kind]):
             a_vals = sorted(_value_set(facts_a[kind]))
             b_vals = sorted(_value_set(facts_b[kind]))
@@ -203,32 +235,9 @@ def _is_tier_specific_refund_window_question(question: str | None) -> bool:
 
 
 def _should_attempt_conflict_scan(question: str | None) -> bool:
-    q = (question or "").lower()
-    if not q:
-        return True
-
-    if any(term in q for term in ("delete", "deletion", "soft-delete", "purge", "removed")):
-        return True
-    if ("uptime" in q) and ("guarantee" in q):
-        return True
-    if ("uptime" in q) and bool(re.search(r"99\.?9", q)):
-        return True
-    if ("pto" in q) and any(term in q for term in ("carry over", "carryover", "roll over", "rollover")):
-        return True
-    if ("refund" in q) and (("window" in q) or bool(re.search(r"\bafter\s+\d+", q))):
-        # Generic refund-window questions should scan for conflicting windows,
-        # while tier-specific refund windows are handled as non-conflicts.
-        after_number = bool(re.search(r"\bafter\s+\d+", q))
-        has_tier = any(tier in q for tier in TIER_TOKENS)
-        if _is_tier_specific_refund_window_question(question):
-            return False
-        if after_number and has_tier:
-            return True
-        if "window" in q:
-            return True
-        return _is_explicit_conflict_question(question)
-
-    return False
+    if _is_tier_specific_refund_window_question(question):
+        return False
+    return True
 
 
 def check_for_conflicts(chunks: list[dict], threshold: float = 0.3, question: str | None = None) -> Optional[dict]:

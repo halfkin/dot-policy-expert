@@ -70,14 +70,14 @@ def test_tier_specific_refund_window_is_not_treated_as_conflict():
 def test_skips_within_doc_conflict_for_multi_part_questions():
     chunks = [
         {
-            "doc_id": "incident_response.md",
-            "chunk_id": "incident_response.md#p1-escalation-to-cto",
+            "doc_id": "sla.md",
+            "chunk_id": "sla.md#p1-escalation-policy",
             "text": "If a P1 incident is not resolved within 4 hours, the CTO must be paged directly.",
             "score": 1.0,
         },
         {
-            "doc_id": "incident_response.md",
-            "chunk_id": "incident_response.md#post-mortem-requirement",
+            "doc_id": "sla.md",
+            "chunk_id": "sla.md#post-mortem-requirement",
             "text": "A post-mortem is required for P1 incidents within 72 hours of resolution.",
             "score": 0.9,
         },

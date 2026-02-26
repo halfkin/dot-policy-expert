@@ -43,35 +43,6 @@ def get_reranker():
     return _model
 
 
-def rerank(query: str, chunks: List[ChunkTuple], top_k: int = 3) -> List[ChunkTuple]:
-    """
-    Re-rank retrieved chunks using a cross-encoder.
-
-    Args:
-        query: The user's question (or reformulated query)
-        chunks: List of (doc_id, chunk_id, text, score) tuples from blended retrieval
-        top_k: Number of chunks to return after re-ranking
-
-    Returns:
-        Re-ranked list of (doc_id, chunk_id, text, cross_encoder_score) tuples.
-        Falls back to original ranking if reranker is disabled/unavailable.
-    """
-    model = get_reranker()
-
-    if model is None or not chunks:
-        return chunks[:top_k]
-
-    pairs = [(query, chunk[2]) for chunk in chunks]
-    scores = model.predict(pairs)
-
-    scored = list(zip(chunks, scores))
-    scored.sort(key=lambda x: float(x[1]), reverse=True)
-
-    reranked: List[ChunkTuple] = []
-    for (doc_id, chunk_id, text, _original_score), ce_score in scored[:top_k]:
-        reranked.append((doc_id, chunk_id, text, float(ce_score)))
-    return reranked
-
 
 def _apply_doc_diversity(scored_chunks: List[ChunkTuple], top_k: int) -> List[ChunkTuple]:
     if not scored_chunks or top_k <= 0:

@@ -6,3 +6,4 @@ logs/
 .DS_Store
 output/
 evals/results/
+*.jsonl

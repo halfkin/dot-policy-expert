@@ -3,7 +3,6 @@ from backend.app import (
     ConversationTurn,
     build_suggestions,
     check_language,
-    expand_query_tokens,
     get_confidence,
     is_likely_followup,
     score_chunk,
@@ -30,13 +29,13 @@ BILLING_CHUNK = {
     "search_text": "billing invoice schedule invoices are generated on the 1st of each month and payment is due within 15 days",
 }
 
-TIMEOFF_CHUNK = {
-    "doc_id": "time_off.md",
-    "chunk_id": "time_off.md#pto-carryover-limit",
-    "text": "Employees can carry over a maximum of 5 days of PTO into the next calendar year.",
-    "heading": "PTO Carryover Limit",
-    "doc_title": "Time Off",
-    "search_text": "time off pto carryover limit employees can carry over a maximum of 5 days of pto into the next calendar year",
+ACCOUNTS_CHUNK = {
+    "doc_id": "accounts.md",
+    "chunk_id": "accounts.md#account-suspension-policy",
+    "text": "Accounts with overdue balances are suspended after 30 days of non-payment.",
+    "heading": "Account Suspension Policy",
+    "doc_title": "Accounts",
+    "search_text": "accounts account suspension policy accounts with overdue balances are suspended after 30 days of non-payment",
 }
 
 
@@ -60,25 +59,6 @@ def test_tokenize_mixed_alphanumeric_and_short_tokens():
     assert "x" not in tokens
     assert "a" not in tokens
 
-
-def test_expand_query_tokens_money_back_adds_refund():
-    base = tokenize("I want my money back")
-    expanded = expand_query_tokens("I want my money back", base)
-    assert "refund" in expanded
-
-
-def test_expand_query_tokens_pto_adds_time_off_tokens():
-    base = tokenize("What is the PTO policy?")
-    expanded = expand_query_tokens("What is the PTO policy?", base)
-    assert "time" in expanded
-    assert "off" in expanded
-    assert "vacation" in expanded
-
-
-def test_expand_query_tokens_no_match_unchanged():
-    base = ["invoice", "billing"]
-    expanded = expand_query_tokens("Invoice due date details", base)
-    assert expanded == base
 
 
 def test_score_chunk_refund_beats_billing_for_refund_question():
@@ -144,7 +124,7 @@ def test_select_top_sources_caps_to_top_k():
     scored = [
         (0.95, REFUND_CHUNK),
         (0.90, BILLING_CHUNK),
-        (0.85, TIMEOFF_CHUNK),
+        (0.85, ACCOUNTS_CHUNK),
         (0.80, {**REFUND_CHUNK, "chunk_id": "refunds.md#automated-refund-processing-cutoff"}),
         (0.75, {**BILLING_CHUNK, "chunk_id": "billing.md#accepted-payment-methods"}),
     ]
@@ -157,7 +137,7 @@ def test_select_top_sources_prefers_doc_diversity_for_multipart():
         (0.95, REFUND_CHUNK),
         (0.90, {**REFUND_CHUNK, "chunk_id": "refunds.md#enterprise-satisfaction-guarantee-window"}),
         (0.85, BILLING_CHUNK),
-        (0.80, TIMEOFF_CHUNK),
+        (0.80, ACCOUNTS_CHUNK),
     ]
     selected = select_top_sources(scored, question="billing and pto policy details", top_k=TOP_K)
     selected_docs = [chunk["doc_id"] for _, chunk in selected]
@@ -170,11 +150,11 @@ def test_build_suggestions_dedup_threshold_and_limit():
         (1.0, REFUND_CHUNK),
         (0.95, {**REFUND_CHUNK, "chunk_id": "refunds.md#standard-refund-eligibility-window-2"}),
         (0.09, BILLING_CHUNK),
-        (0.10, TIMEOFF_CHUNK),
+        (0.10, ACCOUNTS_CHUNK),
         (0.70, {**BILLING_CHUNK, "heading": "Accepted Payment Methods", "chunk_id": "billing.md#accepted-payment-methods"}),
     ]
     suggestions = build_suggestions(scored, max_score=1.0, limit=2)
     assert len(suggestions) == 2
     assert suggestions[0].doc_id == "refunds.md"
     assert suggestions[0].heading == "Standard Refund Eligibility Window"
-    assert all(s.heading != "PTO Carryover Limit" for s in suggestions)
+    assert all(s.heading != "Account Suspension Policy" for s in suggestions)
