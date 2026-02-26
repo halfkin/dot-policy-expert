@@ -30,6 +30,7 @@ INJECTION_PATTERNS = [
     r"hidden[\s._-]*(?:sections?|metadata)",
     r"(?:i[\s._-]*am|i[\s._-]*m)[\s._-]*the[\s._-]*(?:vp|vice[\s._-]*president|ceo|cfo|admin|administrator)",
     r"emergency[\s._-]*override",
+    r"pretend[\s._-]*(?:you(?:'re|[\s._-]*are))?[\s._-]*(?:an?|the)?[\s._-]*\w[\w\s]{0,30}?\b(?:and|then|to|now)\b[\s._-]*(?:approve|send|delete|transfer|authorize|execute|process|grant|override|refund|cancel)",
 ]
 
 CONNECTORS = {"the", "and", "for", "are", "is", "to", "in", "of", "a", "that", "it", "was"}
@@ -203,9 +204,6 @@ def scan_input(text: str, use_llm_judge: bool = True) -> dict:
     if lakera_decision is False:
         return _clean_result(text)
 
-    deepseek_decision = _openrouter_judge(snippet)
-    if deepseek_decision is True:
-        return _blocked_result(text, "layer_3", "DeepSeek classifier returned YES")
-
-    # Fail-open on timeout/API failures/indeterminate responses.
+    # Lakera is unavailable — fail-open rather than letting OpenRouter block
+    # unilaterally. Both classifiers must be reachable to block.
     return _clean_result(text)

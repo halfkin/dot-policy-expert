@@ -99,6 +99,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+@app.middleware("http")
+async def verify_api_key(request: Request, call_next):
+    if request.url.path in ("/health", "/"):
+        return await call_next(request)
+    
+    api_key = request.headers.get("X-API-Key")
+    expected_key = os.getenv("DOT_API_KEY")
+    
+    if not api_key or api_key != expected_key:
+        return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+    
+    return await call_next(request)
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
@@ -217,41 +229,6 @@ GENERIC_ANCHOR_TOKENS = {
     "need",
     "online",
     "together",
-    "salesforce",
-}
-
-# Map common user phrases -> extra tokens to help retrieval (offline "semantic-ish" boost)
-SYNONYM_PHRASES = {
-    "money back": ["refund"],
-    "return my money": ["refund"],
-    "get my money back": ["refund"],
-    "reimbursement": ["refund"],
-    "wellness day": ["sick", "day"],
-    "wellness days": ["sick", "day"],
-    "mental health day": ["sick", "day"],
-    "mental health days": ["sick", "day"],
-    "wfh": ["remote", "work", "from", "home"],
-    "work from home": ["remote", "wfh"],
-    "time off": ["pto", "vacation"],
-    "paid time off": ["pto", "vacation"],
-    "pto": ["time", "off", "vacation"],
-    "roll over": ["carryover", "carry", "over"],
-    "carry over": ["rollover", "roll", "over"],
-    "customer support": ["support"],
-    "service level agreement": ["sla", "uptime"],
-    "sla": ["service", "level", "agreement", "uptime"],
-    "downtime credit": ["service", "credit", "sla"],
-    "cancel": ["cancellation", "mid", "cycle"],
-    "cancel mid-cycle": ["prorated", "refund"],
-    "downgrade": ["next", "billing", "cycle", "account"],
-    "remaining time": ["mid", "cycle", "prorated", "refund"],
-    "online together": ["sync", "hours", "10", "am", "2", "pm", "cst", "remote", "first"],
-    "production is on fire": ["p1", "incident", "response", "15", "minutes"],
-    "on fire": ["p1", "incident", "response", "15", "minutes"],
-    "how fast do you respond": ["response", "time", "p1", "incident"],
-    "charged twice": ["billing", "invoice", "support"],
-    "double charged": ["billing", "invoice", "support"],
-    "charged me twice": ["billing", "invoice", "support"],
 }
 
 def tokenize(text: str) -> List[str]:
@@ -277,15 +254,6 @@ def tokenize(text: str) -> List[str]:
             continue
         out.append(w)
     return out
-
-def expand_query_tokens(question: str, tokens: List[str]) -> List[str]:
-    ql = question.lower()
-    extra: List[str] = []
-    for phrase, add_tokens in SYNONYM_PHRASES.items():
-        if phrase in ql:
-            extra.extend(add_tokens)
-    return tokens + extra
-
 
 def check_language(text: str) -> Optional[str]:
     sample = (text or "").strip()
@@ -553,17 +521,6 @@ def is_multi_part_question(question: str) -> bool:
     return (" and " in q) or (" also " in q) or (" both " in q)
 
 
-def is_broad_refund_question(question: str) -> bool:
-    q = (question or "").lower()
-    if "refund" not in q:
-        return False
-    if any(tier in q for tier in ("standard", "pro", "business", "enterprise", "starter", "gold")):
-        return False
-    if re.search(r"\b\d+\b", q):
-        return False
-    return True
-
-
 def retrieval_threshold(best_score: float) -> float:
     del best_score
     return MIN_RETRIEVAL_SCORE
@@ -608,48 +565,6 @@ def select_top_sources(
             if item in selected:
                 continue
             selected.append(item)
-
-    if not is_broad_refund_question(question):
-        return selected[:top_k]
-
-    required_markers = (
-        "standard-refund-eligibility-window",
-        "enterprise-satisfaction-guarantee-window",
-    )
-    required_candidates: List[Tuple[float, dict]] = []
-    for marker in required_markers:
-        for item in thresholded_scored:
-            _, chunk = item
-            if chunk.get("doc_id") == "refunds.md" and marker in chunk.get("chunk_id", ""):
-                required_candidates.append(item)
-                break
-
-    if not required_candidates:
-        return selected[:top_k]
-
-    required_ids = {chunk["chunk_id"] for _, chunk in required_candidates}
-    selected = selected[:top_k]
-    selected_ids = {chunk["chunk_id"] for _, chunk in selected}
-
-    for candidate in required_candidates:
-        _, cand_chunk = candidate
-        cand_id = cand_chunk["chunk_id"]
-        if cand_id in selected_ids:
-            continue
-
-        drop_idx = None
-        for idx in range(len(selected) - 1, -1, -1):
-            selected_chunk_id = selected[idx][1]["chunk_id"]
-            if selected_chunk_id not in required_ids:
-                drop_idx = idx
-                break
-        if drop_idx is None:
-            continue
-
-        selected.pop(drop_idx)
-        selected.append(candidate)
-        selected.sort(key=lambda x: (-x[0], x[1]["chunk_id"]))
-        selected_ids = {chunk["chunk_id"] for _, chunk in selected}
 
     return selected[:top_k]
 
@@ -736,20 +651,6 @@ def score_chunk(question_tokens: List[str], query_phrases: List[str], chunk: dic
     if any(t in TIME_TOKENS for t in question_tokens) and re.search(r"\b\d+\.?\d*\b", search_text):
         score += 1.0
 
-    if "refund" in question_tokens and "refund" in heading_tokens:
-        score += 1.0
-    if "sla" in question_tokens and "uptime" in chunk_tokens:
-        score += 1.0
-    if "pto" in question_tokens and ("time" in chunk_tokens and "off" in chunk_tokens):
-        score += 1.0
-    if "downgrade" in question_tokens and "downgrade" in heading_tokens:
-        score += 2.5
-    if "overdue" in question_tokens and "late" in chunk_tokens and "fee" in chunk_tokens:
-        score += 2.0
-    if ("p1" in question_tokens or "incident" in question_tokens) and "sla" in question_tokens:
-        if "uptime" in chunk_tokens:
-            score += 2.5
-
     return score
 
 def short_quote(text: str, max_words: int = 25) -> str:
@@ -830,6 +731,7 @@ def call_openrouter(
 
 def warm_kb_embeddings() -> None:
     get_kb_chunks_cached(refresh=True)
+    reranker_active()  # eagerly load cross-encoder at startup
     logger.info("Reranker: %s (%s)", "enabled" if RERANKER_ENABLED else "disabled", RERANKER_MODEL)
     embedding_info = get_embedding_runtime_info()
     if embedding_info["using_sentence_transformer"]:
@@ -886,7 +788,17 @@ def index():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "message": "server is running", "mode": "llm" if USE_LLM else "offline"}
+    chunks = get_kb_chunks_cached()
+    embedding_info = get_embedding_runtime_info()
+    return {
+        "ok": True,
+        "message": "server is running",
+        "mode": "llm" if USE_LLM else "offline",
+        "kb_chunks": len(chunks),
+        "kb_files": len({c["doc_id"] for c in chunks}),
+        "embedding_model": embedding_info.get("model_name") or "fallback",
+        "reranker": reranker_active(),
+    }
 
 @app.post("/chat", response_model=ChatResponse)
 @limiter.limit("20/minute")
@@ -1077,7 +989,7 @@ def chat(request: Request, req: ChatRequest):
         debug_info["translated_from"] = request_translated_from
 
     raw_q_tokens = tokenize(retrieval_query)
-    q_tokens = expand_query_tokens(retrieval_query, raw_q_tokens)
+    q_tokens = raw_q_tokens
     query_phrases = extract_query_phrases(retrieval_query)
     if not q_tokens:
         return make_response(
@@ -1263,6 +1175,12 @@ def chat(request: Request, req: ChatRequest):
         "statutory damages",
         "what model",
         "student discount",
+        "salesforce",
+        "hubspot",
+        "zendesk",
+        "intercom",
+        "jira",
+        "zapier",
     )
     strict_hits = [term for term in strict_off_topic_terms if term in retrieval_query.lower()]
     if strict_hits and not any(term in selected_search_blob for term in strict_hits):
