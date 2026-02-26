@@ -739,13 +739,13 @@
   {
     "id": "NIS-01",
     "category": "not_in_sources",
-    "question": "Does Loomo integrate with Salesforce?",
+    "question": "Does Loomo offer a student discount?",
     "expected_answer_contains": [
       "Not in sources"
     ],
     "expected_citations": [],
     "expected_failure_bucket": "not_in_sources",
-    "pass_criteria": "Must respond with 'Not in sources.' prefix."
+    "pass_criteria": "Must respond with 'Not in sources.' prefix. Student discounts are not covered anywhere in the KB."
   },
   {
     "id": "NIS-02",
