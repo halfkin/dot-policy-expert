@@ -1170,19 +1170,14 @@ def chat(request: Request, req: ChatRequest):
         "languages",
         "framework",
         "super bowl",
-        "aws",
         "civil code",
         "statutory damages",
         "what model",
         "student discount",
-        "salesforce",
         "hubspot",
         "zendesk",
-        "intercom",
-        "jira",
-        "zapier",
     )
-    strict_hits = [term for term in strict_off_topic_terms if term in retrieval_query.lower()]
+    strict_hits = [term for term in strict_off_topic_terms if term in retrieval_query.lower() or term in raw_question.lower()]
     if strict_hits and not any(term in selected_search_blob for term in strict_hits):
         return make_response(
             answer=not_in_sources_answer(),
