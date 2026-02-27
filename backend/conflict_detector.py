@@ -159,15 +159,30 @@ def _llm_verify_chunk_conflict(text_a: str, text_b: str, question: str) -> bool:
             json={
                 "model": _OPENROUTER_MODEL,
                 "temperature": 0.0,
-                "max_tokens": 5,
+                "max_tokens": 80,
                 "messages": [
                     {
                         "role": "system",
                         "content": (
-                            "You detect data contradictions. Answer \"yes\" ONLY if the SAME "
-                            "specific metric or limit is stated with INCOMPATIBLE values. "
-                            "Answer \"no\" if the values refer to different things. "
-                            "Answer ONLY \"yes\" or \"no\"."
+                            "You detect data contradictions in policy documents. "
+                            "First, identify what SPECIFIC RULE each excerpt states. "
+                            "Then decide: do they contradict each other?\n\n"
+                            "Answer format:\n"
+                            "Excerpt 1 rule: [one-line summary]\n"
+                            "Excerpt 2 rule: [one-line summary]\n"
+                            "Contradiction: yes OR no\n\n"
+                            "A contradiction means the EXACT SAME rule/guarantee/limit "
+                            "is stated with DIFFERENT values.\n\n"
+                            "NOT contradictions (answer no):\n"
+                            "- Standard refund window (14 days) vs Enterprise satisfaction guarantee (30 days) — different policies\n"
+                            "- Account deletion timeline vs account reactivation window — different processes\n"
+                            "- Different plan tiers with different values (Pro 99.9% vs Enterprise 99.99%)\n"
+                            "- Different severity levels with different response times (P1 15min vs P4 48hr)\n"
+                            "- Eligibility period vs processing cutoff — different aspects of the same topic\n\n"
+                            "ARE contradictions (answer yes):\n"
+                            "- One doc says Pro uptime is 99.9%, another says ALL tiers get 99.99%\n"
+                            "- One doc says refund window is 14 days, another says the same refund window is 30 days for the same tier\n"
+                            "- One doc says data deletion takes 30 days, another says the same deletion process takes 45 days"
                         ),
                     },
                     {
@@ -176,17 +191,7 @@ def _llm_verify_chunk_conflict(text_a: str, text_b: str, question: str) -> bool:
                             f'User question: "{question}"\n\n'
                             f"Excerpt 1:\n{text_a[:600]}\n\n"
                             f"Excerpt 2:\n{text_b[:600]}\n\n"
-                            "Is there a DIRECT CONTRADICTION relevant to the user's question?\n\n"
-                            "A contradiction = the SAME specific fact stated with different values.\n"
-                            "NOT a contradiction:\n"
-                            "- Different plan tiers with different values (Pro vs Enterprise)\n"
-                            "- Different aspects with different numbers "
-                            "(eligibility period vs processing time, response time vs resolution time)\n"
-                            "- Different policies with different durations "
-                            "(suspension period vs data retention vs refund window)\n"
-                            "IS a contradiction:\n"
-                            "- Same guarantee stated as both 99.9% and 99.99% for the same plan\n"
-                            "- Same refund window stated as both 14 days and 30 days for the same tier"
+                            "Do these excerpts contain a direct contradiction relevant to the user's question?"
                         ),
                     },
                 ],
@@ -200,7 +205,7 @@ def _llm_verify_chunk_conflict(text_a: str, text_b: str, question: str) -> bool:
             "CONFLICT_LLM_VERIFY question=%r llm_result=%s latency_ms=%d",
             question[:60], answer, latency_ms,
         )
-        return answer.startswith("yes")
+        return "contradiction: yes" in answer
     except Exception as exc:
         latency_ms = int((time.time() - start) * 1000)
         logger.warning(
