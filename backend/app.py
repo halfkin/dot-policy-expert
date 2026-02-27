@@ -122,7 +122,10 @@ USE_LLM = os.getenv("USE_LLM", "0") == "1"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini").strip()
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-CUSTOMER_SUPPORT_LINE = "I'd recommend reaching out to our support team for clarification."
+COMPANY_NAME = os.getenv("COMPANY_NAME", "Loomo")
+BOT_NAME = os.getenv("BOT_NAME", "Dot")
+SUPPORT_LINE = os.getenv("SUPPORT_LINE", "our support team")
+CUSTOMER_SUPPORT_LINE = f"I'd recommend reaching out to {SUPPORT_LINE} for clarification."
 NOT_IN_SOURCES_PREFIX = "Not in sources."
 MAX_INPUT_LENGTH = 10_000
 SHOW_DEBUG = os.getenv("SHOW_DEBUG", "false").strip().lower() == "true"
@@ -214,7 +217,7 @@ BLEND_SEMANTIC_WEIGHT = float(os.getenv("BLEND_SEMANTIC_WEIGHT", "0.6"))
 SEMANTIC_CANDIDATE_POOL = int(os.getenv("SEMANTIC_CANDIDATE_POOL", "24"))
 KB_CHUNKS_CACHE: Optional[List[dict]] = None
 GENERIC_ANCHOR_TOKENS = {
-    "loomo",
+    COMPANY_NAME.lower(),
     "hub",
     "company",
     "policy",
@@ -676,7 +679,7 @@ def call_openrouter(
     )
 
     system = (
-        "You are Dot, Loomo's policy assistant. You answer questions using ONLY the provided SOURCES.\n"
+        f"You are {BOT_NAME}, {COMPANY_NAME}'s policy assistant. You answer questions using ONLY the provided SOURCES.\n"
         "Read ALL provided source chunks before answering.\n"
         "\n"
         "ANSWERING RULES:\n"
@@ -870,7 +873,7 @@ def chat(request: Request, req: ChatRequest):
 
     if not q:
         return make_response(
-            answer="Please enter a question about Loomo's policies.",
+            answer=f"Please enter a question about {COMPANY_NAME}'s policies.",
             citations=[],
             confidence="low",
             failure_bucket="empty_input",
@@ -935,7 +938,7 @@ def chat(request: Request, req: ChatRequest):
         return make_response(
             answer=(
                 "I can't process that request as written. "
-                f"Please rephrase your question about Loomo policies. {CUSTOMER_SUPPORT_LINE}"
+                f"Please rephrase your question about {COMPANY_NAME} policies. {CUSTOMER_SUPPORT_LINE}"
             ),
             citations=[],
             confidence="low",
@@ -1236,7 +1239,7 @@ def chat(request: Request, req: ChatRequest):
         answer = "Based on the policy text, here is the most relevant information:\n\n" + top_sources[0][2]
     else:
         sections = [f"{i}. [{doc_id} | {chunk_id}]\n{text}" for i, (doc_id, chunk_id, text) in enumerate(top_sources, start=1)]
-        answer = "Based on Loomo policy documents, here are the most relevant details:\n\n" + "\n\n".join(sections)
+        answer = f"Based on {COMPANY_NAME} policy documents, here are the most relevant details:\n\n" + "\n\n".join(sections)
 
     confidence = get_confidence(float(best_score))
 
