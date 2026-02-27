@@ -7,3 +7,8 @@ logs/
 output/
 evals/results/
 *.jsonl
+.context/gemini-*.md
+.context/gemini_*.md
+.context/audit-notes.md
+eval_output.log
+eval_results_loomo.json
