@@ -1,0 +1,8 @@
+:80 {
+    reverse_proxy dot:8000
+}
+
+# For production with HTTPS:
+# yourdomain.com {
+#     reverse_proxy dot:8000
+# }

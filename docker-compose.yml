@@ -3,9 +3,32 @@ version: "3.8"
 services:
   dot:
     build: .
-    ports:
-      - "8000:8000"
+    restart: unless-stopped
     env_file:
       - .env
     volumes:
       - ./kb:/app/kb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      dot:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
