@@ -18,9 +18,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent / ".env")
+    load_dotenv(REPO_ROOT / ".env")
 except ImportError:
     pass
 
@@ -171,8 +173,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Loomo Dot eval suite runner")
     parser.add_argument(
         "--eval-file",
-        default="eval_suite_loomo.json",
-        help="Path to the eval suite JSON (default: eval_suite_loomo.json)",
+        default=str(REPO_ROOT / "evals" / "eval_suite_loomo.json"),
+        help="Path to the eval suite JSON (default: evals/eval_suite_loomo.json)",
     )
     parser.add_argument(
         "--endpoint",
@@ -187,8 +189,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default="eval_results_loomo.json",
-        help="Output file path (default: eval_results_loomo.json)",
+        default=str(REPO_ROOT / "evals" / "results" / "eval_results_loomo.json"),
+        help="Output file path (default: evals/results/eval_results_loomo.json)",
     )
     parser.add_argument(
         "--timeout",
@@ -242,7 +244,7 @@ def main() -> None:
         print(
             f"\n[ERROR] Cannot reach Dot at {args.endpoint}: {exc}\n"
             f"\nTo start Dot locally, run:\n"
-            f"    cd '{Path(__file__).parent}'\n"
+            f"    cd '{REPO_ROOT}'\n"
             f"    source .venv/bin/activate\n"
             f"    uvicorn backend.app:app --host 127.0.0.1 --port 8000\n",
             file=sys.stderr,
@@ -326,7 +328,8 @@ def main() -> None:
         for cat, stats in sorted(by_category.items())
     }
 
-    kb_files = sorted(p.name for p in Path("kb").glob("*.md")) if Path("kb").exists() else []
+    kb_dir = REPO_ROOT / "kb"
+    kb_files = sorted(p.name for p in kb_dir.glob("*.md")) if kb_dir.exists() else []
 
     fingerprint = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
