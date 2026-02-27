@@ -8,17 +8,15 @@ from collections import deque
 from functools import wraps
 import logging
 import os
-import re
 import json
 import time
-import requests
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from backend.ravelin import scan_input
 from backend.conflict_detector import check_for_conflicts
-from backend.embedder import embed_chunks, semantic_search, get_embedding_runtime_info
+from backend.embedder import get_embedding_runtime_info
 from backend.query_reformulator import reformulate_query
 from backend.reranker import (
     RERANKER_ENABLED,
@@ -26,6 +24,26 @@ from backend.reranker import (
     rerank_with_diversity,
     reranker_active,
 )
+from backend.kb_loader import get_kb_chunks_cached
+from backend.retrieval import (
+    blended_search,
+    select_top_sources,
+    build_suggestions,
+    tokenize,
+    score_chunk,
+    short_quote,
+    not_in_sources_answer,
+    extract_query_phrases,
+    get_query_anchors,
+    get_confidence,
+    retrieval_threshold,
+    BLEND_KEYWORD_WEIGHT,
+    BLEND_SEMANTIC_WEIGHT,
+    TOP_K,
+    INITIAL_RETRIEVAL_TOP_K,
+)
+from backend.llm_client import call_openrouter
+from backend.language import check_language, translate_to_english, SUPPORTED_LANGUAGES
 
 logger = logging.getLogger(__name__)
 
@@ -81,16 +99,6 @@ except Exception:
 
             return decorator
 
-try:
-    from langdetect import detect, detect_langs, LangDetectException, DetectorFactory
-    DetectorFactory.seed = 0  # deterministic language detection across runs
-    HAS_LANGDETECT = True
-except ImportError:
-    detect = None  # type: ignore[assignment]
-    detect_langs = None  # type: ignore[assignment]
-    LangDetectException = Exception  # type: ignore[assignment]
-    HAS_LANGDETECT = False
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     del app
@@ -103,25 +111,21 @@ app = FastAPI(lifespan=lifespan)
 async def verify_api_key(request: Request, call_next):
     if request.url.path in ("/health", "/"):
         return await call_next(request)
-    
+
     api_key = request.headers.get("X-API-Key")
     expected_key = os.getenv("DOT_API_KEY")
-    
+
     if not api_key or api_key != expected_key:
         return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
-    
+
     return await call_next(request)
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
-
-KB_DIR = Path("kb")
 
 # ---- LLM Mode (optional) ----
 # Default is OFF to keep things fully offline.
 USE_LLM = os.getenv("USE_LLM", "0") == "1"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini").strip()
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 COMPANY_NAME = os.getenv("COMPANY_NAME", "Loomo")
 BOT_NAME = os.getenv("BOT_NAME", "Dot")
 SUPPORT_LINE = os.getenv("SUPPORT_LINE", "our support team")
@@ -140,7 +144,6 @@ FOLLOWUP_SIGNALS = [
     "how does that",
 ]
 PRONOUNS = ["it", "that", "this", "those", "them", "they"]
-SUPPORTED_LANGUAGES = {"en", "fr", "es"}
 
 # ----- Request/Response Types -----
 
@@ -199,135 +202,7 @@ class ChatResponse(BaseModel):
     reranker_active: bool = False
     debug: Optional[dict] = None
 
-# ----- Helpers (RAG-lite) -----
-
-STOPWORDS = {
-    "the","a","an","and","or","to","of","in","on","for","with","is","are","was","were",
-    "what","how","when","where","who","why","do","does","did","can","could","should",
-    "i","you","we","they","it","this","that",
-    "have","policy","policies"
-}
-
-TIME_TOKENS = {"long", "within", "day", "days", "week", "weeks", "time", "duration"}
-TOP_K = 3
-INITIAL_RETRIEVAL_TOP_K = 20
-MIN_RETRIEVAL_SCORE = 0.18
-BLEND_KEYWORD_WEIGHT = float(os.getenv("BLEND_KEYWORD_WEIGHT", "0.4"))
-BLEND_SEMANTIC_WEIGHT = float(os.getenv("BLEND_SEMANTIC_WEIGHT", "0.6"))
-SEMANTIC_CANDIDATE_POOL = int(os.getenv("SEMANTIC_CANDIDATE_POOL", "24"))
-KB_CHUNKS_CACHE: Optional[List[dict]] = None
-GENERIC_ANCHOR_TOKENS = {
-    COMPANY_NAME.lower(),
-    "hub",
-    "company",
-    "policy",
-    "policies",
-    "customer",
-    "customers",
-    "question",
-    "information",
-    "about",
-    "team",
-    "support",
-    "need",
-    "online",
-    "together",
-}
-
-def tokenize(text: str) -> List[str]:
-    words = re.findall(r"[a-z0-9]+", text.lower())
-    out = []
-    for w in words:
-        # Split mixed alnum tokens such as "401k" into ["401", "k"].
-        mixed_parts = re.findall(r"\d+|[a-z]+", w)
-        if len(mixed_parts) > 1:
-            for part in mixed_parts:
-                if part in STOPWORDS:
-                    continue
-                if len(part) < 2 and not part.isdigit():
-                    continue
-                out.append(part)
-            continue
-        # naive plural normalization: "refunds" -> "refund"
-        if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
-            w = w[:-1]
-        if w in STOPWORDS:
-            continue
-        if len(w) < 2:
-            continue
-        out.append(w)
-    return out
-
-def check_language(text: str) -> Optional[str]:
-    sample = (text or "").strip()
-    if len(sample) < 10:
-        return None
-    if not HAS_LANGDETECT:
-        lowered = sample.lower()
-        if re.search(r"[¿¡]", sample) or re.search(
-            r"\b(hola|gracias|reembolso|politica|política|cuenta|factura)\b", lowered
-        ):
-            return "es"
-        if re.search(r"\b(bonjour|merci|remboursement|politique|facturation|est-ce|quelle|rgpd|conforme|combien|quels?|cette|nous|vous|notre|votre)\b", lowered):
-            return "fr"
-        if re.search(r"\b(bitte|danke|rückerstattung|richtlinie|vertrag|kündigung|zahlung|wie|warum|welche|unser|dieser)\b", lowered):
-            return "de"
-        if re.search(r"[\u4e00-\u9fff]", sample):
-            return "zh"
-        if re.search(r"[\uac00-\ud7af]", sample):
-            return "ko"
-        return None
-    try:
-        ranked = detect_langs(sample) if detect_langs else []  # type: ignore[misc]
-        if ranked:
-            best = ranked[0]
-            lang = getattr(best, "lang", None)
-            prob = float(getattr(best, "prob", 0.0))
-            # Avoid false positives on English queries with ambiguous tokens.
-            if lang == "en":
-                return "en"
-            if prob >= 0.90:
-                return lang
-            return None
-        return detect(sample)  # type: ignore[misc]
-    except LangDetectException:
-        return None
-
-
-def translate_to_english(text: str, source_lang: str) -> str:
-    """Translate French or Spanish input to English using OpenRouter."""
-    if source_lang == "en":
-        return text
-    if source_lang not in {"fr", "es"}:
-        raise ValueError(f"Unsupported translation source language: {source_lang}")
-
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": OPENROUTER_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a translator. Translate the following text to English. "
-                    "Return ONLY the translation, nothing else."
-                ),
-            },
-            {"role": "user", "content": text},
-        ],
-        "temperature": 0.0,
-    }
-    response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=20)
-    if not response.ok:
-        raise RuntimeError(f"Translation request failed: HTTP {response.status_code}")
-    data = response.json()
-    translated = data["choices"][0]["message"]["content"].strip()
-    if not translated:
-        raise RuntimeError("Translation response was empty")
-    return translated
-
+# ----- Helpers -----
 
 def is_likely_followup(question: str, history: List[ConversationTurn]) -> bool:
     if not history:
@@ -345,392 +220,6 @@ def get_last_user_message(history: List[ConversationTurn]) -> Optional[str]:
             if content:
                 return content
     return None
-
-
-def get_confidence(top_score: float) -> Literal["high", "medium", "low"]:
-    if top_score > 0.70:
-        return "high"
-    if top_score > 0.40:
-        return "medium"
-    return "low"
-
-def slugify(s: str) -> str:
-    s = s.lower().strip()
-    s = re.sub(r"[^a-z0-9\s-]", "", s)
-    s = re.sub(r"\s+", "-", s)
-    s = re.sub(r"-+", "-", s)
-    return s.strip("-") or "chunk"
-
-
-def strip_markdown(text: str) -> str:
-    cleaned_lines = []
-    for line in (text or "").splitlines():
-        line = re.sub(r"^\s{0,3}#{1,6}\s*", "", line)
-        line = re.sub(r"^\s*[-*+]\s+", "", line)
-        line = re.sub(r"^\s*\d+\.\s+", "", line)
-        cleaned_lines.append(line)
-
-    cleaned = "\n".join(cleaned_lines)
-    cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", cleaned)
-    cleaned = re.sub(r"[`*_~]", "", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned
-
-
-def chunk_markdown(doc_id: str, text: str) -> List[dict]:
-    """
-    Split markdown on H2/H3 headings and return retrieval chunks.
-
-    Each chunk includes:
-      - chunk_id: "<filename>#<heading-slug>"
-      - text: stripped markdown text
-      - heading: H2/H3 text
-      - doc_title: inherited H1 title
-      - search_text: doc title + heading + text (normalized for matching)
-    """
-    lines = (text or "").splitlines()
-    doc_title = Path(doc_id).stem.replace("_", " ").title()
-    for line in lines:
-        if line.strip().startswith("# "):
-            doc_title = re.sub(r"^#\s+", "", line.strip()).strip() or doc_title
-            break
-
-    chunks: List[dict] = []
-    slug_counts: dict[str, int] = {}
-    current_heading: Optional[str] = None
-    current_body: List[str] = []
-
-    def flush_chunk() -> None:
-        nonlocal current_heading, current_body
-        if not current_heading:
-            return
-
-        raw_body = "\n".join(current_body).strip()
-        raw_chunk = f"{current_heading}\n{raw_body}".strip()
-        normalized_text = strip_markdown(raw_chunk)
-        if not normalized_text:
-            current_heading = None
-            current_body = []
-            return
-
-        base_slug = slugify(current_heading)
-        slug_counts[base_slug] = slug_counts.get(base_slug, 0) + 1
-        slug = base_slug if slug_counts[base_slug] == 1 else f"{base_slug}-{slug_counts[base_slug]}"
-
-        search_text = strip_markdown(f"{doc_title} {current_heading} {raw_body}").lower()
-        chunks.append(
-            {
-                "doc_id": doc_id,
-                "chunk_id": f"{doc_id}#{slug}",
-                "text": normalized_text,
-                "heading": current_heading,
-                "doc_title": doc_title,
-                "search_text": search_text,
-            }
-        )
-        current_heading = None
-        current_body = []
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("## ") or stripped.startswith("### "):
-            flush_chunk()
-            current_heading = re.sub(r"^#{2,3}\s+", "", stripped).strip()
-            current_body = []
-            continue
-
-        if current_heading is not None:
-            current_body.append(line)
-
-    flush_chunk()
-
-    if not chunks:
-        fallback_text = strip_markdown(text)
-        if fallback_text:
-            chunks.append(
-                {
-                    "doc_id": doc_id,
-                    "chunk_id": f"{doc_id}#overview",
-                    "text": fallback_text,
-                    "heading": "Overview",
-                    "doc_title": doc_title,
-                    "search_text": strip_markdown(f"{doc_title} {fallback_text}").lower(),
-                }
-            )
-
-    return chunks
-
-
-def load_kb_chunks() -> List[dict]:
-    if not KB_DIR.exists():
-        return []
-    all_chunks: List[dict] = []
-    for path in sorted(KB_DIR.glob("*.md")):
-        doc_id = path.name
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        all_chunks.extend(chunk_markdown(doc_id, text))
-    return all_chunks
-
-
-def get_kb_chunks_cached(refresh: bool = False) -> List[dict]:
-    global KB_CHUNKS_CACHE
-    if KB_CHUNKS_CACHE is None or refresh:
-        chunks = load_kb_chunks()
-        if chunks:
-            try:
-                chunks = embed_chunks(chunks)
-            except Exception as e:
-                print(f"[Embedder] Failed to embed chunks, continuing with keyword retrieval only: {type(e).__name__}: {e}")
-        KB_CHUNKS_CACHE = chunks
-    return KB_CHUNKS_CACHE or []
-
-def extract_query_phrases(question: str, max_phrases: int = 8) -> List[str]:
-    words = re.findall(r"[a-z0-9]+", question.lower())
-    phrases: List[str] = []
-    seen = set()
-
-    for n in (4, 3, 2):
-        for i in range(len(words) - n + 1):
-            slice_words = words[i : i + n]
-            if all(w in STOPWORDS for w in slice_words):
-                continue
-            phrase = " ".join(slice_words).strip()
-            if len(phrase) < 8:
-                continue
-            if phrase in seen:
-                continue
-            seen.add(phrase)
-            phrases.append(phrase)
-            if len(phrases) >= max_phrases:
-                return phrases
-    return phrases
-
-
-def get_query_anchors(raw_tokens: List[str]) -> List[str]:
-    anchors = []
-    for t in raw_tokens:
-        if len(t) < 4:
-            continue
-        if t in GENERIC_ANCHOR_TOKENS:
-            continue
-        if t in TIME_TOKENS:
-            continue
-        if t.isdigit():
-            continue
-        anchors.append(t)
-    return sorted(set(anchors))
-
-
-def is_multi_part_question(question: str) -> bool:
-    q = (question or "").lower()
-    return (" and " in q) or (" also " in q) or (" both " in q)
-
-
-def retrieval_threshold(best_score: float) -> float:
-    del best_score
-    return MIN_RETRIEVAL_SCORE
-
-
-def semantic_retrieval_enabled() -> bool:
-    if BLEND_SEMANTIC_WEIGHT <= 0.0 or SEMANTIC_CANDIDATE_POOL <= 0:
-        return False
-    embedding_info = get_embedding_runtime_info()
-    return bool(embedding_info.get("using_sentence_transformer"))
-
-
-def not_in_sources_answer() -> str:
-    return f"{NOT_IN_SOURCES_PREFIX} {CUSTOMER_SUPPORT_LINE}"
-
-
-def select_top_sources(
-    thresholded_scored: List[Tuple[float, dict]],
-    question: str,
-    top_k: int = TOP_K,
-) -> List[Tuple[float, dict]]:
-    if len(thresholded_scored) <= top_k:
-        selected = thresholded_scored[:]
-    elif not is_multi_part_question(question):
-        selected = thresholded_scored[:top_k]
-    else:
-        # For multi-part questions, maximize document diversity before taking duplicates.
-        selected = []
-        seen_docs = set()
-        for item in thresholded_scored:
-            _, chunk = item
-            if chunk["doc_id"] in seen_docs:
-                continue
-            selected.append(item)
-            seen_docs.add(chunk["doc_id"])
-            if len(selected) >= top_k:
-                break
-
-        for item in thresholded_scored:
-            if len(selected) >= top_k:
-                break
-            if item in selected:
-                continue
-            selected.append(item)
-
-    return selected[:top_k]
-
-
-def build_suggestions(scored: List[Tuple[float, dict]], max_score: float, limit: int = 3) -> List[Suggestion]:
-    suggestions: List[Suggestion] = []
-    seen = set()
-    for score, chunk in scored:
-        normalized = (float(score) / max_score) if max_score else 0.0
-        if normalized <= 0.1:
-            continue
-        key = (chunk["doc_id"], chunk["heading"])
-        if key in seen:
-            continue
-        seen.add(key)
-        suggestions.append(Suggestion(doc_id=chunk["doc_id"], heading=chunk["heading"]))
-        if len(suggestions) >= limit:
-            break
-    return suggestions
-
-
-def blended_search(
-    query: str,
-    chunks: List[dict],
-    keyword_scored: List[Tuple[float, dict]],
-    top_k: Optional[int] = None,
-) -> List[Tuple[float, dict]]:
-    if not chunks:
-        return []
-
-    keyword_scores = {
-        chunk["chunk_id"]: float(score)
-        for score, chunk in keyword_scored
-    }
-
-    semantic_limit = min(
-        len(chunks),
-        max(SEMANTIC_CANDIDATE_POOL, (top_k or TOP_K) * 8),
-    )
-    semantic_results = semantic_search(query, chunks, top_k=semantic_limit)
-    semantic_scores = {
-        chunk["chunk_id"]: float(chunk.get("semantic_score", 0.0))
-        for chunk in semantic_results
-    }
-
-    max_kw = max(keyword_scores.values()) if keyword_scores else 0.0
-    max_sem = max(semantic_scores.values()) if semantic_scores else 0.0
-    id_to_chunk = {chunk["chunk_id"]: chunk for chunk in chunks}
-    all_chunk_ids = sorted(set(keyword_scores.keys()) | set(semantic_scores.keys()))
-
-    blended: List[Tuple[float, dict]] = []
-    for chunk_id in all_chunk_ids:
-        chunk = id_to_chunk.get(chunk_id)
-        if not chunk:
-            continue
-        kw_norm = (keyword_scores.get(chunk_id, 0.0) / max_kw) if max_kw > 0 else 0.0
-        sem_norm = (semantic_scores.get(chunk_id, 0.0) / max_sem) if max_sem > 0 else 0.0
-        score = BLEND_KEYWORD_WEIGHT * kw_norm + BLEND_SEMANTIC_WEIGHT * sem_norm
-        if score > 0:
-            blended.append((score, chunk))
-
-    blended.sort(key=lambda x: (-x[0], x[1]["chunk_id"]))
-    if top_k is not None:
-        return blended[:top_k]
-    return blended
-
-
-def score_chunk(question_tokens: List[str], query_phrases: List[str], chunk: dict) -> float:
-    search_text = chunk["search_text"]
-    chunk_tokens = set(tokenize(search_text))
-    heading_tokens = set(tokenize(f"{chunk['doc_title']} {chunk['heading']}"))
-
-    token_hits = sum(1 for t in question_tokens if t in chunk_tokens)
-    heading_hits = sum(1 for t in question_tokens if t in heading_tokens)
-    phrase_hits = sum(1 for phrase in query_phrases if phrase in search_text)
-
-    if token_hits == 0 and heading_hits == 0 and phrase_hits == 0:
-        return 0.0
-
-    score = float(token_hits)
-    score += float(heading_hits) * 2.0
-    score += float(phrase_hits) * 3.0
-
-    if any(t in TIME_TOKENS for t in question_tokens) and re.search(r"\b\d+\.?\d*\b", search_text):
-        score += 1.0
-
-    return score
-
-def short_quote(text: str, max_words: int = 25) -> str:
-    words = text.replace("\n", " ").split()
-    return " ".join(words[:max_words])
-
-def call_openrouter(
-    question: str,
-    sources: List[Tuple[float, str, str, str]],
-    history: Optional[List[ConversationTurn]] = None,
-) -> str:
-    """
-    sources: list of (normalized_score, doc_id, chunk_id, chunk_text)
-    """
-    # Build a strict prompt: answer ONLY from sources, else definitive not-in-sources response.
-    sources_block = "\n\n".join(
-        [
-            f"[rank={idx} score={score:.3f} | {doc_id} | {chunk_id}]\n{chunk_text}"
-            for idx, (score, doc_id, chunk_id, chunk_text) in enumerate(sources, start=1)
-        ]
-    )
-
-    system = (
-        f"You are {BOT_NAME}, {COMPANY_NAME}'s policy assistant. You answer questions using ONLY the provided SOURCES.\n"
-        "Read ALL provided source chunks before answering.\n"
-        "\n"
-        "ANSWERING RULES:\n"
-        "- If the source chunks contain information that answers the question, write a clear, direct answer in your own words, then cite the source(s) you used.\n"
-        "- Do NOT simply list or paste the source chunks. Synthesize the information into a helpful response.\n"
-        "- If the question requires reasoning (e.g., 'Am I eligible on day 29?'), apply the policy rules to the specific situation and give a direct yes/no answer with explanation.\n"
-        "- If the source chunks do NOT contain information that directly answers the question, respond with exactly: Not in sources. I'd recommend reaching out to our support team for clarification.\n"
-        "- A chunk is NOT relevant just because it shares a keyword. A chunk about enforcement policies does not answer a question about conversation history. A chunk about onboarding does not answer a question about stock tickers.\n"
-        "\n"
-        "NEVER DO:\n"
-        "- Do NOT ask follow-up questions.\n"
-        "- Do NOT guess or infer facts not in the sources.\n"
-        "- Do NOT use outside knowledge.\n"
-        "- Do NOT answer meta-questions about your own system, documents, or capabilities.\n"
-    )
-
-    history_lines: List[str] = []
-    for turn in history or []:
-        role = "User" if turn.role == "user" else "Assistant"
-        content = (turn.content or "").strip()
-        if not content:
-            continue
-        history_lines.append(f"{role}: {content}")
-    history_block = "\n".join(history_lines) if history_lines else "(none)"
-
-    user = (
-        "CONVERSATION HISTORY:\n"
-        f"{history_block}\n\n"
-        f"CURRENT QUESTION:\n{question}\n\n"
-        "SOURCES (Top-K retrieved chunks):\n"
-        f"{sources_block}\n"
-    )
-
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": OPENROUTER_MODEL,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "temperature": 0.2,
-    }
-
-    r = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=20)
-    if not r.ok:
-        raise RuntimeError(f"OpenRouter HTTP {r.status_code}: {r.text[:500]}")
-    data = r.json()
-    return data["choices"][0]["message"]["content"].strip()
 
 # ----- Routes -----
 
@@ -1031,7 +520,8 @@ def chat(request: Request, req: ChatRequest):
         )
 
     best_score, _ = scored[0]
-    suggestions = build_suggestions(scored, max_score=float(best_score))
+    suggestion_dicts = build_suggestions(scored, max_score=float(best_score))
+    suggestions = [Suggestion(doc_id=s["doc_id"], heading=s["heading"]) for s in suggestion_dicts]
     minimum_threshold = retrieval_threshold(float(best_score))
     thresholded_scored = [(s, chunk) for s, chunk in scored if s >= minimum_threshold]
 
