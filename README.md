@@ -101,13 +101,13 @@ Ravelin is a custom-built, 4-layer input security pipeline designed for this pro
 | Adversarial | 100% (7/7) |
 | Not in sources | 100% (3/3) |
 | Reasoning | 100% (3/3) |
-| Paraphrased | 80% (4/5) |
+| Paraphrased | 100% (5/5) |
 | Multilingual | 75% (3/4) |
 | Edge case | 87.5% (7/8) |
 | Conflict detection | 60% (3/5) |
 | **Overall** | **93.1% (54/58)** |
 
-6 of 9 categories at 100%. Conflict detection went from 0% to 60% after adding LLM-verified conflict detection — the remaining 2 failures are retrieval gaps (the right chunks don't always get surfaced together), not detection failures. The 4 non-conflict failures are: 1 multilingual LLM non-determinism edge case, 1 paraphrased query where retrieval finds the wrong chunk, and 2 intermittent Jaccard borderline cases.
+6 of 9 categories at 100%. Conflict detection went from 0% to 60% after adding LLM-verified conflict detection with chain-of-thought prompting. The 4 remaining failures: 2 conflict detection gaps (CF-02 retrieval doesn't always surface both conflicting chunks; CF-03 tier filtering excludes the cross-tier fact before the LLM sees it), 1 edge case (EC-06 intermittent false conflict on Jaccard borderline), and 1 multilingual edge case.
 
 Every eval run classifies failures by root cause — retrieval failures (wrong chunk found) vs generation failures (right chunk, bad answer). The fix is different for each: retrieval failures need better search, generation failures need better prompting.
 
@@ -125,7 +125,7 @@ Every eval run classifies failures by root cause — retrieval failures (wrong c
 | Loomo KB eval (58q) | 81% | New 58-question suite for Loomo KB. Jaccard threshold fix eliminated conflict false positives. |
 | Tier-aware conflict | 90% | Heading-based tier extraction for conflict detector, expanded French/German language detection. |
 | LLM conflict verifier | 91% | LLM-verified conflict detection for low-Jaccard pairs. Caught 3/5 real conflicts, but introduced 2 false positive regressions. |
-| Chain-of-thought refinement | **93%** | Chain-of-thought prompt forces LLM to identify each rule before judging contradiction. Fixed both regressions, no new failures. |
+| Chain-of-thought refinement | **93%** | Chain-of-thought prompt forces LLM to identify each rule before judging contradiction. Fixed both regressions plus paraphrased failure, no new failures. |
 
 The conflict detection arc is the most instructive part: token-based Jaccard comparison hit a ceiling at 0% because real conflicts use different vocabulary (Jaccard scores of 0.03–0.11, well below the 0.2 threshold needed to avoid false positives). The data showed no clean threshold separating real conflicts from false positives — non-conflict pairs like "P1 response: 15 minutes" vs "P4 response: 48 hours" scored *higher* than real conflicts. The fix required moving from token overlap to semantic understanding: an LLM verifier that fires only when regex finds numeric disagreements but Jaccard can't confirm. The initial yes/no prompt created its own false positives (different policies with similar numbers), which the chain-of-thought refinement solved by forcing the LLM to articulate what each excerpt says before deciding.
 
@@ -172,21 +172,47 @@ pip install -r requirements.txt
 cp .env.example .env   # add OPENROUTER_API_KEY
 ./run_online.sh
 
-# Or via Docker
+# Or via Docker (includes Caddy reverse proxy)
 docker compose up --build
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000) (direct) or [http://localhost](http://localhost) (via Caddy)
 
 ## Tech Stack
 
 Python 3.11, FastAPI, sentence-transformers (all-MiniLM-L6-v2, cross-encoder/ms-marco-MiniLM-L-6-v2), OpenRouter (GPT-4o-mini), Lakera Guard, vanilla HTML/CSS/JS frontend, Docker + Caddy.
+
+### Backend Modules
+
+| Module | Lines | Purpose |
+|--------|-------|---------|
+| `app.py` | 793 | FastAPI routes, request orchestration, chat pipeline |
+| `conflict_detector.py` | 474 | Regex fact extraction → tier-aware filtering → LLM verification |
+| `retrieval.py` | 254 | Tokenization, blended keyword + semantic scoring, source selection |
+| `ravelin.py` | 209 | 4-layer prompt injection defense pipeline |
+| `kb_loader.py` | 142 | Markdown chunking by heading, KB cache management |
+| `embedder.py` | 132 | Sentence-transformer embeddings and semantic search |
+| `reranker.py` | 99 | Cross-encoder re-ranking with diversity selection |
+| `language.py` | 99 | Language detection (French/Spanish/German) and translation |
+| `llm_client.py` | 87 | OpenRouter LLM calls with configurable system prompt |
+| `query_reformulator.py` | 58 | Vague query rewriting for better retrieval |
+
+### Configurable Branding
+
+Company name, bot name, and support line are environment variables — swap the KB folder and set three env vars to deploy for a different organization:
+
+```bash
+COMPANY_NAME=Acme        # defaults to Loomo
+BOT_NAME=Atlas           # defaults to Dot
+SUPPORT_LINE=help@acme.com  # defaults to "our support team"
+```
 
 ## Documentation
 
 - [Failure Mode Catalog](docs/FAILURE_MODES.md) — Every way the system can fail and what to do about it
 - [Cost Analysis](docs/COST_ANALYSIS.md) — Per-query cost breakdown and monthly estimates
 - [Customer Journeys](docs/CUSTOMER_JOURNEYS.md) — 7 end-to-end scenarios
+- [Eval Improvement Log](docs/EVAL_IMPROVEMENT_LOG.md) — Phase-by-phase eval progression with root cause analysis
 - [Verification Plan](docs/PLANS.md) — Milestone-based development checklist
 
 ## What I'd Change With More Time
